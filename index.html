@@ -89,8 +89,8 @@
 
     <div class="hint">
       <b>Phone:</b> Broadcast → Start<br>
-      <b>Other devices:</b> Watch → same Stream ID → Start<br>
-      If you see “ID is taken”, just change the Stream ID slightly (e.g. mycam2) or wait 30 seconds.
+      <b>Other device:</b> Watch → type the exact same Stream ID → Start<br>
+      If you get “ID is taken”, change the Stream ID (e.g. mycam2) and try again.
     </div>
   </div>
 
@@ -130,10 +130,11 @@
       stopBtn.disabled = true;
     }
 
-    // ========== BROADCAST ==========
-    async function startBroadcast(desiredId) {
+    // ========== BROADCAST (phone) ==========
+    async function startBroadcast(id) {
       try {
         setStatus('Starting camera…');
+
         localStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: 'environment' },
@@ -142,81 +143,49 @@
           },
           audio: false
         });
+
         video.srcObject = localStream;
         video.muted = true;
 
-        // Try the requested ID. If taken, automatically try a few variants.
-        let attempt = 0;
-        const tryCreate = (id) => {
-          return new Promise((resolve, reject) => {
-            const p = new Peer(id, {
-              debug: 1,
-              config: {
-                iceServers: [
-                  { urls: 'stun:stun.l.google.com:19302' },
-                  { urls: 'stun:stun1.l.google.com:19302' }
-                ]
-              }
-            });
-
-            p.on('open', () => resolve(p));
-            p.on('error', (err) => {
-              if (err.type === 'unavailable-id') {
-                p.destroy();
-                reject(err);
-              } else {
-                reject(err);
-              }
-            });
-          });
-        };
-
-        let finalId = desiredId;
-        while (attempt < 5) {
-          try {
-            peer = await tryCreate(finalId);
-            break;
-          } catch (err) {
-            if (err.type === 'unavailable-id') {
-              attempt++;
-              finalId = desiredId + '-' + Math.floor(Math.random() * 1000);
-              setStatus(`ID taken, trying ${finalId}…`);
-            } else {
-              throw err;
-            }
+        // Create the peer
+        peer = new Peer(id, {
+          debug: 1,
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' }
+            ]
           }
-        }
+        });
 
-        if (!peer) {
-          setStatus('Could not get a free ID. Try a different Stream ID.', 'error');
-          cleanup();
-          return;
-        }
+        peer.on('open', (myId) => {
+          setStatus(`Broadcasting as "${myId}"`, 'success');
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+        });
 
-        streamIdInput.value = finalId; // show the actual ID being used
-        setStatus(`Broadcasting as "${finalId}"`, 'success');
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
-
-        // When a viewer connects via data channel, call them with our camera
         peer.on('connection', (conn) => {
           dataConn = conn;
           conn.on('data', (viewerId) => {
             setStatus('Viewer joined – sending camera…', 'success');
-            const call = peer.call(viewerId, localStream);
-            currentCall = call;
-            call.on('close', () => setStatus('Viewer left'));
+            currentCall = peer.call(viewerId, localStream);
+            currentCall.on('close', () => setStatus('Viewer left'));
           });
         });
 
         peer.on('error', (err) => {
           console.error(err);
-          setStatus('Error: ' + err.type, 'error');
+          if (err.type === 'unavailable-id') {
+            setStatus('ID already taken. Change the Stream ID and try again.', 'error');
+          } else {
+            setStatus('Error: ' + err.type, 'error');
+          }
+          cleanup();
         });
 
       } catch (err) {
         console.error(err);
-        setStatus('Camera / connection error: ' + (err.message || err.type), 'error');
+        setStatus('Camera error: ' + err.message, 'error');
         cleanup();
       }
     }
@@ -239,18 +208,18 @@
         dataConn = peer.connect(id);
 
         dataConn.on('open', () => {
-          dataConn.send(myId); // tell broadcaster our ID
+          dataConn.send(myId); // tell the phone our ID
           setStatus('Waiting for stream…');
         });
 
         dataConn.on('error', () => {
-          setStatus('Could not reach the broadcaster. Is it online?', 'error');
+          setStatus('Could not reach broadcaster', 'error');
         });
       });
 
       peer.on('call', (call) => {
         currentCall = call;
-        call.answer(); // receive-only
+        call.answer(); // receive only
 
         call.on('stream', (remoteStream) => {
           video.srcObject = remoteStream;
@@ -269,22 +238,23 @@
       peer.on('error', (err) => {
         console.error(err);
         if (err.type === 'peer-unavailable') {
-          setStatus('Stream not found. Is the phone broadcasting with this ID?', 'error');
+          setStatus('Stream not found. Is the phone broadcasting?', 'error');
         } else {
           setStatus('Error: ' + err.type, 'error');
         }
       });
     }
 
-    // ========== UI ==========
+    // ========== BUTTONS ==========
     startBtn.onclick = () => {
       const id = streamIdInput.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
       if (!id) {
-        setStatus('Enter a Stream ID', 'error');
+        setStatus('Please enter a Stream ID', 'error');
         return;
       }
       streamIdInput.value = id;
-      cleanup();
+
+      cleanup(); // clean previous session
 
       if (modeSelect.value === 'broadcast') {
         startBroadcast(id);
