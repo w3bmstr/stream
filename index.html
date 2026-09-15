@@ -111,9 +111,12 @@
     let dataConn = null;
     let currentMode = null;
     let currentId = null;
-    let retryTimeout = null;
+    let retryTimeout = null;       // for retrying after a peer/network error
+    let reconnectTimeout = null;   // for retrying after a watchdog-detected ICE drop
+    let connectTimeout = null;     // hard cap on "Connecting…" so it can't hang forever
     let watchdogInterval = null;
     let manualStop = false;
+    let reconnecting = false;      // true while a reconnect is already scheduled/in-flight
 
     const ICE_CONFIG = {
       iceServers: [
@@ -159,6 +162,21 @@
       }, 2000);
     }
 
+    function scheduleReconnect(id) {
+      if (manualStop || reconnecting) return;
+      reconnecting = true;
+      reconnectTimeout = setTimeout(() => {
+        if (manualStop || currentMode !== 'watch') return;
+        cleanup();
+        startWatch(id);
+      }, 1500);
+    }
+
+    function stopReconnect() {
+      reconnecting = false;
+      if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
+    }
+
     function setStatus(msg, type = '') {
       statusEl.textContent = msg;
       statusEl.className = type;
@@ -167,6 +185,13 @@
     function cleanup() {
       clearWatchdog();
       if (retryTimeout) { clearTimeout(retryTimeout); retryTimeout = null; }
+      if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
+      // NOTE: reconnectTimeout is intentionally NOT cleared here. When an ICE
+      // connection dies, PeerJS fires the call's 'close' event, whose handler
+      // calls cleanup(). If cleanup() also cancelled a reconnect that the
+      // watchdog just scheduled, the retry would never happen and the UI
+      // would hang. Full-stop paths (Stop button, manual Start) clear it
+      // explicitly instead — see stopReconnect().
       try {
         if (currentCall) { currentCall.close(); currentCall = null; }
         if (dataConn) { dataConn.close(); dataConn = null; }
@@ -201,6 +226,7 @@
         currentMode = 'broadcast';
         currentId = id;
         manualStop = false;
+        reconnecting = false;
 
         // Create the peer
         peer = new Peer(id, {
@@ -218,12 +244,21 @@
           dataConn = conn;
           conn.on('data', (viewerId) => {
             setStatus('Viewer joined – sending camera…', 'success');
+            reconnecting = false;
             currentCall = peer.call(viewerId, localStream);
-            currentCall.on('close', () => setStatus('Viewer left'));
+            currentCall.on('close', () => {
+              // If the watchdog already flagged this as a bad ICE state,
+              // the viewer is expected to reconnect momentarily — don't
+              // overwrite that status with a plain "Viewer left".
+              if (!reconnecting) setStatus('Viewer left');
+            });
 
-            // Watch the connection and re-send the stream if it dies
-            // without the page knowing (common on flaky NATs).
+            // Watch the connection and let the viewer know if it dies
+            // without the page knowing (common on flaky NATs). The VIEWER
+            // side re-initiates the connection; the broadcaster just waits
+            // since it's still listening for a new 'connection' event.
             watchIceState(currentCall, (state) => {
+              reconnecting = true;
               setStatus(`Connection ${state}, waiting for viewer to reconnect…`, 'error');
             });
           });
@@ -274,6 +309,7 @@
       currentMode = 'watch';
       currentId = id;
       manualStop = false;
+      reconnecting = false;
 
       peer = new Peer({
         debug: 1,
@@ -297,7 +333,17 @@
         currentCall = call;
         call.answer(); // receive only
 
+        // Hard cap: if we never actually get a stream, don't let the UI
+        // sit on "Connecting…" forever — treat it as a failed attempt and
+        // retry the whole watch flow from scratch.
+        connectTimeout = setTimeout(() => {
+          if (manualStop || currentMode !== 'watch') return;
+          setStatus('Connection timed out — retrying…', 'error');
+          scheduleReconnect(id);
+        }, 15000);
+
         call.on('stream', (remoteStream) => {
+          if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
           video.srcObject = remoteStream;
           video.muted = false;
           setStatus('Connected – watching live', 'success');
@@ -308,18 +354,14 @@
           // freeze the last video frame forever.
           watchIceState(call, (state) => {
             setStatus(`Connection ${state} — reconnecting…`, 'error');
-            if (!manualStop) {
-              retryTimeout = setTimeout(() => {
-                if (!manualStop && currentMode === 'watch') {
-                  cleanup();
-                  startWatch(id);
-                }
-              }, 1500);
-            }
+            scheduleReconnect(id);
           });
         });
 
         call.on('close', () => {
+          // If a reconnect is already scheduled (watchdog or timeout caught
+          // this first), let it run instead of overwriting status here.
+          if (reconnecting) return;
           setStatus('Stream ended');
           cleanup();
         });
@@ -359,6 +401,7 @@
       streamIdInput.value = id;
 
       manualStop = true; // cancel any pending retry from a previous session
+      stopReconnect();
       cleanup(); // clean previous session
 
       if (modeSelect.value === 'broadcast') {
@@ -371,6 +414,7 @@
     stopBtn.onclick = () => {
       manualStop = true;
       currentMode = null;
+      stopReconnect();
       cleanup();
       setStatus('Stopped');
     };
