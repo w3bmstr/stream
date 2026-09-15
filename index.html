@@ -109,6 +109,55 @@
     let localStream = null;
     let currentCall = null;
     let dataConn = null;
+    let currentMode = null;
+    let currentId = null;
+    let retryTimeout = null;
+    let watchdogInterval = null;
+    let manualStop = false;
+
+    const ICE_CONFIG = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        // Public TURN relay fallback — needed when STUN alone can't punch through
+        // strict NATs/firewalls (common on desktop/corporate networks).
+        {
+          urls: 'turn:openrelay.metered.ca:80',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
+      ]
+    };
+
+    function clearWatchdog() {
+      if (watchdogInterval) {
+        clearInterval(watchdogInterval);
+        watchdogInterval = null;
+      }
+    }
+
+    function watchIceState(call, onBad) {
+      clearWatchdog();
+      watchdogInterval = setInterval(() => {
+        const pc = call && call.peerConnection;
+        if (!pc) return;
+        const state = pc.iceConnectionState;
+        if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+          clearWatchdog();
+          onBad(state);
+        }
+      }, 2000);
+    }
 
     function setStatus(msg, type = '') {
       statusEl.textContent = msg;
@@ -116,6 +165,8 @@
     }
 
     function cleanup() {
+      clearWatchdog();
+      if (retryTimeout) { clearTimeout(retryTimeout); retryTimeout = null; }
       try {
         if (currentCall) { currentCall.close(); currentCall = null; }
         if (dataConn) { dataConn.close(); dataConn = null; }
@@ -147,15 +198,14 @@
         video.srcObject = localStream;
         video.muted = true;
 
+        currentMode = 'broadcast';
+        currentId = id;
+        manualStop = false;
+
         // Create the peer
         peer = new Peer(id, {
           debug: 1,
-          config: {
-            iceServers: [
-              { urls: 'stun:stun.l.google.com:19302' },
-              { urls: 'stun:stun1.l.google.com:19302' }
-            ]
-          }
+          config: ICE_CONFIG
         });
 
         peer.on('open', (myId) => {
@@ -170,17 +220,45 @@
             setStatus('Viewer joined – sending camera…', 'success');
             currentCall = peer.call(viewerId, localStream);
             currentCall.on('close', () => setStatus('Viewer left'));
+
+            // Watch the connection and re-send the stream if it dies
+            // without the page knowing (common on flaky NATs).
+            watchIceState(currentCall, (state) => {
+              setStatus(`Connection ${state}, waiting for viewer to reconnect…`, 'error');
+            });
           });
+        });
+
+        peer.on('disconnected', () => {
+          if (manualStop) return;
+          setStatus('Lost connection to signaling server, reconnecting…', 'error');
+          try { peer.reconnect(); } catch (e) {}
         });
 
         peer.on('error', (err) => {
           console.error(err);
           if (err.type === 'unavailable-id') {
-            setStatus('ID already taken. Change the Stream ID and try again.', 'error');
+            // The old session's ID is likely still held by the server from
+            // an unclean disconnect. Destroy this peer and retry shortly
+            // instead of giving up immediately.
+            setStatus('ID busy (stale session?) — retrying…', 'error');
+            if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
+            if (!manualStop) {
+              retryTimeout = setTimeout(() => {
+                if (!manualStop && currentMode === 'broadcast') startBroadcast(id);
+              }, 3000);
+            }
+          } else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error' || err.type === 'socket-closed') {
+            setStatus('Connection problem — retrying…', 'error');
+            if (!manualStop) {
+              retryTimeout = setTimeout(() => {
+                if (!manualStop && currentMode === 'broadcast') startBroadcast(id);
+              }, 3000);
+            }
           } else {
             setStatus('Error: ' + err.type, 'error');
+            cleanup();
           }
-          cleanup();
         });
 
       } catch (err) {
@@ -193,15 +271,13 @@
     // ========== WATCH ==========
     function startWatch(id) {
       setStatus('Connecting…');
+      currentMode = 'watch';
+      currentId = id;
+      manualStop = false;
 
       peer = new Peer({
         debug: 1,
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
-          ]
-        }
+        config: ICE_CONFIG
       });
 
       peer.on('open', (myId) => {
@@ -227,6 +303,20 @@
           setStatus('Connected – watching live', 'success');
           startBtn.disabled = true;
           stopBtn.disabled = false;
+
+          // Watch the connection so a silent NAT/ICE failure doesn't just
+          // freeze the last video frame forever.
+          watchIceState(call, (state) => {
+            setStatus(`Connection ${state} — reconnecting…`, 'error');
+            if (!manualStop) {
+              retryTimeout = setTimeout(() => {
+                if (!manualStop && currentMode === 'watch') {
+                  cleanup();
+                  startWatch(id);
+                }
+              }, 1500);
+            }
+          });
         });
 
         call.on('close', () => {
@@ -235,10 +325,24 @@
         });
       });
 
+      peer.on('disconnected', () => {
+        if (manualStop) return;
+        setStatus('Lost connection to signaling server, reconnecting…', 'error');
+        try { peer.reconnect(); } catch (e) {}
+      });
+
       peer.on('error', (err) => {
         console.error(err);
         if (err.type === 'peer-unavailable') {
           setStatus('Stream not found. Is the phone broadcasting?', 'error');
+        } else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error' || err.type === 'socket-closed') {
+          setStatus('Connection problem — retrying…', 'error');
+          if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
+          if (!manualStop) {
+            retryTimeout = setTimeout(() => {
+              if (!manualStop && currentMode === 'watch') startWatch(id);
+            }, 3000);
+          }
         } else {
           setStatus('Error: ' + err.type, 'error');
         }
@@ -254,6 +358,7 @@
       }
       streamIdInput.value = id;
 
+      manualStop = true; // cancel any pending retry from a previous session
       cleanup(); // clean previous session
 
       if (modeSelect.value === 'broadcast') {
@@ -264,6 +369,8 @@
     };
 
     stopBtn.onclick = () => {
+      manualStop = true;
+      currentMode = null;
       cleanup();
       setStatus('Stopped');
     };
