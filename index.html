@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Live Camera Stream</title>
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="peerjs.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -81,15 +81,15 @@
       <option value="watch">Watch (anyone)</option>
     </select>
 
-    <label>Stream ID (choose any simple name)</label>
-    <input id="streamId" type="text" placeholder="e.g. mycam or room1" value="mycam" />
+    <label>Stream ID</label>
+    <input id="streamId" type="text" value="mycam" placeholder="e.g. mycam" />
 
     <button id="startBtn">Start</button>
     <button id="stopBtn" class="secondary" disabled>Stop</button>
 
     <div class="hint">
-      <strong>Broadcast:</strong> Open this page on your phone → choose Broadcast → Start.<br>
-      <strong>Watch:</strong> Open the same page on any device → choose Watch → enter the same Stream ID → Start.
+      <b>Phone:</b> Broadcast → Start<br>
+      <b>Other devices:</b> Watch → same Stream ID → Start
     </div>
   </div>
 
@@ -107,6 +107,7 @@
     let peer = null;
     let localStream = null;
     let currentCall = null;
+    let dataConn = null;
 
     function setStatus(msg, type = '') {
       statusEl.textContent = msg;
@@ -114,14 +115,9 @@
     }
 
     function cleanup() {
-      if (currentCall) {
-        currentCall.close();
-        currentCall = null;
-      }
-      if (peer) {
-        peer.destroy();
-        peer = null;
-      }
+      if (currentCall) { currentCall.close(); currentCall = null; }
+      if (dataConn) { dataConn.close(); dataConn = null; }
+      if (peer) { peer.destroy(); peer = null; }
       if (localStream) {
         localStream.getTracks().forEach(t => t.stop());
         localStream = null;
@@ -131,6 +127,7 @@
       stopBtn.disabled = true;
     }
 
+    // ========== BROADCAST (phone) ==========
     async function startBroadcast(id) {
       try {
         setStatus('Starting camera…');
@@ -152,26 +149,30 @@
         });
 
         peer.on('open', (myId) => {
-          setStatus(`Broadcasting as "${myId}" – anyone can watch with this ID`, 'success');
+          setStatus(`Broadcasting as "${myId}"`, 'success');
           startBtn.disabled = true;
           stopBtn.disabled = false;
         });
 
-        peer.on('call', (call) => {
-          setStatus('Viewer connected!', 'success');
-          call.answer(localStream);          // send our camera to the viewer
-          currentCall = call;
+        // Viewer will connect with a data channel and tell us its ID
+        peer.on('connection', (conn) => {
+          dataConn = conn;
+          conn.on('data', (viewerId) => {
+            setStatus('Viewer joined – sending stream…', 'success');
+            // Now WE (the one with the camera) call the viewer
+            const call = peer.call(viewerId, localStream);
+            currentCall = call;
 
-          call.on('close', () => {
-            setStatus('Viewer disconnected');
+            call.on('close', () => setStatus('Viewer left'));
           });
         });
 
         peer.on('error', (err) => {
           console.error(err);
-          setStatus('Error: ' + err.type, 'error');
           if (err.type === 'unavailable-id') {
-            setStatus('That Stream ID is already in use. Pick another one.', 'error');
+            setStatus('Stream ID already in use. Choose another.', 'error');
+          } else {
+            setStatus('Error: ' + err.type, 'error');
           }
         });
 
@@ -182,6 +183,7 @@
       }
     }
 
+    // ========== WATCH ==========
     function startWatch(id) {
       setStatus('Connecting…');
 
@@ -195,13 +197,27 @@
         }
       });
 
-      peer.on('open', () => {
-        const call = peer.call(id, null);   // call the broadcaster (no local media needed)
-        if (!call) {
-          setStatus('Could not start call', 'error');
-          return;
-        }
+      peer.on('open', (myId) => {
+        // Connect to the broadcaster with a data channel
+        dataConn = peer.connect(id);
+
+        dataConn.on('open', () => {
+          // Tell the broadcaster our ID so it can call us
+          dataConn.send(myId);
+          setStatus('Waiting for stream…');
+        });
+
+        dataConn.on('error', (err) => {
+          setStatus('Could not reach broadcaster', 'error');
+          console.error(err);
+        });
+      });
+
+      // Broadcaster will call us
+      peer.on('call', (call) => {
         currentCall = call;
+        // Answer without sending any media (one-way)
+        call.answer();   // no stream = receive only
 
         call.on('stream', (remoteStream) => {
           video.srcObject = remoteStream;
@@ -215,26 +231,26 @@
           setStatus('Stream ended');
           cleanup();
         });
-
-        call.on('error', (err) => {
-          setStatus('Call error: ' + err, 'error');
-        });
       });
 
       peer.on('error', (err) => {
         console.error(err);
-        setStatus('Error: ' + err.type + (err.type === 'peer-unavailable' ? ' – is the phone broadcasting?' : ''), 'error');
+        if (err.type === 'peer-unavailable') {
+          setStatus('Stream not found – is the phone broadcasting?', 'error');
+        } else {
+          setStatus('Error: ' + err.type, 'error');
+        }
       });
     }
 
+    // ========== UI ==========
     startBtn.onclick = () => {
       const id = streamIdInput.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
       if (!id) {
-        setStatus('Please enter a Stream ID', 'error');
+        setStatus('Enter a Stream ID', 'error');
         return;
       }
       streamIdInput.value = id;
-
       cleanup();
 
       if (modeSelect.value === 'broadcast') {
@@ -249,7 +265,6 @@
       setStatus('Stopped');
     };
 
-    // Clean up when leaving the page
     window.addEventListener('beforeunload', cleanup);
   </script>
 </body>
