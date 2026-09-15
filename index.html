@@ -147,11 +147,12 @@
         clearInterval(watchdogInterval);
         watchdogInterval = null;
       }
+      watchdogCheckFn = null;
     }
 
     function watchIceState(call, onBad) {
       clearWatchdog();
-      watchdogInterval = setInterval(() => {
+      const check = () => {
         const pc = call && call.peerConnection;
         if (!pc) return;
         const state = pc.iceConnectionState;
@@ -159,7 +160,9 @@
           clearWatchdog();
           onBad(state);
         }
-      }, 2000);
+      };
+      watchdogCheckFn = check;
+      watchdogInterval = setInterval(check, 2000);
     }
 
     function scheduleReconnect(id) {
@@ -177,6 +180,41 @@
       if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
     }
 
+    // Screen Wake Lock: prevents the display/tab from sleeping mid-stream.
+    // This matters mainly on desktop — a phone that's actively capturing
+    // video via getUserMedia tends to stay awake on its own, but a desktop
+    // browser tab can get throttled in the background, or the screen can
+    // lock/sleep, quietly killing the connection while it looks "frozen".
+    let wakeLock = null;
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLock.addEventListener('release', () => { wakeLock = null; });
+        }
+      } catch (e) {
+        // Not fatal — some browsers/contexts (e.g. non-HTTPS) reject this.
+        console.warn('Wake lock unavailable:', e);
+      }
+    }
+    function releaseWakeLock() {
+      if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        if (peer && !peer.destroyed) requestWakeLock();
+        // Background tabs can have timers throttled to once a minute or
+        // less, delaying our watchdog. Force an immediate re-check as soon
+        // as the tab is foregrounded again so a stale drop is caught fast.
+        forceWatchdogCheck();
+      }
+    });
+
+    let watchdogCheckFn = null;
+    function forceWatchdogCheck() {
+      if (watchdogCheckFn) watchdogCheckFn();
+    }
+
     function setStatus(msg, type = '') {
       statusEl.textContent = msg;
       statusEl.className = type;
@@ -184,6 +222,7 @@
 
     function cleanup() {
       clearWatchdog();
+      releaseWakeLock();
       if (retryTimeout) { clearTimeout(retryTimeout); retryTimeout = null; }
       if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
       // NOTE: reconnectTimeout is intentionally NOT cleared here. When an ICE
@@ -227,6 +266,7 @@
         currentId = id;
         manualStop = false;
         reconnecting = false;
+        requestWakeLock();
 
         // Create the peer
         peer = new Peer(id, {
@@ -244,25 +284,35 @@
           dataConn = conn;
           conn.on('data', (viewerId) => {
             setStatus('Viewer joined – sending camera…', 'success');
-            reconnecting = false;
-            currentCall = peer.call(viewerId, localStream);
-            currentCall.on('close', () => {
-              // If the watchdog already flagged this as a bad ICE state,
-              // the viewer is expected to reconnect momentarily — don't
-              // overwrite that status with a plain "Viewer left".
-              if (!reconnecting) setStatus('Viewer left');
-            });
-
-            // Watch the connection and let the viewer know if it dies
-            // without the page knowing (common on flaky NATs). The VIEWER
-            // side re-initiates the connection; the broadcaster just waits
-            // since it's still listening for a new 'connection' event.
-            watchIceState(currentCall, (state) => {
-              reconnecting = true;
-              setStatus(`Connection ${state}, waiting for viewer to reconnect…`, 'error');
-            });
+            answerViewer(viewerId);
           });
         });
+
+        function answerViewer(viewerId) {
+          reconnecting = false;
+          currentCall = peer.call(viewerId, localStream);
+          currentCall.on('close', () => {
+            // If the watchdog already flagged this as a bad ICE state,
+            // a re-call is already scheduled below — don't overwrite that
+            // status with a plain "Viewer left".
+            if (!reconnecting) setStatus('Viewer left');
+          });
+
+          // Watch the connection. Desktops are the side that most often
+          // drops silently (screen lock, sleep, background-tab throttling,
+          // Wi-Fi power saving, NAT rebinding) while a phone actively
+          // capturing video usually stays up. Rather than only waiting for
+          // the viewer to notice and reconnect, the broadcaster proactively
+          // re-calls the same viewer id — whichever side recovers first wins.
+          watchIceState(currentCall, (state) => {
+            reconnecting = true;
+            setStatus(`Connection ${state} — re-calling viewer…`, 'error');
+            retryTimeout = setTimeout(() => {
+              if (manualStop || currentMode !== 'broadcast' || !peer) return;
+              answerViewer(viewerId);
+            }, 2000);
+          });
+        }
 
         peer.on('disconnected', () => {
           if (manualStop) return;
@@ -310,6 +360,7 @@
       currentId = id;
       manualStop = false;
       reconnecting = false;
+      requestWakeLock();
 
       peer = new Peer({
         debug: 1,
