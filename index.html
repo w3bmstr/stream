@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Android Camera to PC Stream (WebRTC)</title>
+  <style>
+    body { font-family: sans-serif; margin: 1rem; }
+    video { width: 320px; max-width: 100%; background: #000; }
+    textarea { width: 100%; height: 120px; }
+    button { margin: 0.25rem 0; }
+    .row { display: flex; flex-wrap: wrap; gap: 1rem; }
+    .col { flex: 1 1 300px; min-width: 280px; }
+  </style>
+</head>
+<body>
+  <h1>Android Camera → WebRTC Stream</h1>
+
+  <p>
+    <strong>Step 1 (Android phone):</strong> Choose <em>“Camera Sender”</em>, start camera, then click
+    <em>“Create Offer”</em>. Copy the offer text and send it to your PC.
+  </p>
+  <p>
+    <strong>Step 2 (PC):</strong> Choose <em>“Viewer”</em>, paste the offer, click <em>“Create Answer”</em>,
+    then copy the answer back to the phone.
+  </p>
+  <p>
+    <strong>Step 3 (Android phone):</strong> Paste the answer and click <em>“Set Remote Answer”</em>.
+    The video should appear on the PC.
+  </p>
+
+  <div>
+    <label>
+      <strong>Role:</strong>
+      <select id="role">
+        <option value="sender">Camera Sender (Android)</option>
+        <option value="viewer">Viewer (PC)</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      <h2>Local Video (this device)</h2>
+      <video id="localVideo" autoplay playsinline muted></video><br />
+      <button id="startCameraBtn">Start Camera (sender only)</button>
+    </div>
+
+    <div class="col">
+      <h2>Remote Video (other device)</h2>
+      <video id="remoteVideo" autoplay playsinline></video>
+    </div>
+  </div>
+
+  <hr />
+
+  <h2>Signaling (copy & paste between devices)</h2>
+
+  <div class="row">
+    <div class="col">
+      <h3>Offer (from sender → to viewer)</h3>
+      <textarea id="offerBox" placeholder="Sender: click 'Create Offer' then copy this to viewer"></textarea><br />
+      <button id="createOfferBtn">Create Offer (sender)</button>
+    </div>
+
+    <div class="col">
+      <h3>Answer (from viewer → to sender)</h3>
+      <textarea id="answerBox" placeholder="Viewer: click 'Create Answer' then copy this to sender"></textarea><br />
+      <button id="createAnswerBtn">Create Answer (viewer)</button>
+      <button id="setRemoteAnswerBtn">Set Remote Answer (sender)</button>
+    </div>
+  </div>
+
+  <script>
+    const roleSelect = document.getElementById('role');
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+
+    const startCameraBtn = document.getElementById('startCameraBtn');
+    const createOfferBtn = document.getElementById('createOfferBtn');
+    const createAnswerBtn = document.getElementById('createAnswerBtn');
+    const setRemoteAnswerBtn = document.getElementById('setRemoteAnswerBtn');
+
+    const offerBox = document.getElementById('offerBox');
+    const answerBox = document.getElementById('answerBox');
+
+    let pc;
+    let localStream;
+
+    const iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' }
+    ];
+
+    function createPeerConnection() {
+      pc = new RTCPeerConnection({ iceServers });
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) return; // wait for gathering to finish
+        console.log('ICE gathering complete');
+        // For simplicity, we rely on the SDP in offer/answer boxes only.
+      };
+
+      pc.ontrack = (event) => {
+        console.log('Remote track received');
+        remoteVideo.srcObject = event.streams[0];
+      };
+    }
+
+    async function startCamera() {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        localVideo.srcObject = localStream;
+
+        if (!pc) createPeerConnection();
+        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+      } catch (err) {
+        console.error(err);
+        alert('Error starting camera: ' + err.message);
+      }
+    }
+
+    // Sender: create offer
+    async function createOffer() {
+      if (!pc) createPeerConnection();
+      if (!localStream) {
+        alert('Start camera first on the sender device.');
+        return;
+      }
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      offerBox.value = JSON.stringify(pc.localDescription);
+    }
+
+    // Viewer: create answer from pasted offer
+    async function createAnswer() {
+      if (!pc) createPeerConnection();
+      if (!offerBox.value.trim()) {
+        alert('Paste the offer from the sender into the Offer box first.');
+        return;
+      }
+      const offer = JSON.parse(offerBox.value.trim());
+      await pc.setRemoteDescription(offer);
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      answerBox.value = JSON.stringify(pc.localDescription);
+    }
+
+    // Sender: set remote answer from viewer
+    async function setRemoteAnswer() {
+      if (!pc) createPeerConnection();
+      if (!answerBox.value.trim()) {
+        alert('Paste the answer from the viewer into the Answer box first.');
+        return;
+      }
+      const answer = JSON.parse(answerBox.value.trim());
+      await pc.setRemoteDescription(answer);
+      alert('Connection established (if network allows). Check the viewer video.');
+    }
+
+    // UI wiring
+    startCameraBtn.onclick = () => {
+      if (roleSelect.value !== 'sender') {
+        alert('Camera start is only for the sender role.');
+        return;
+      }
+      startCamera();
+    };
+
+    createOfferBtn.onclick = () => {
+      if (roleSelect.value !== 'sender') {
+        alert('Create Offer is only for the sender role.');
+        return;
+      }
+      createOffer();
+    };
+
+    createAnswerBtn.onclick = () => {
+      if (roleSelect.value !== 'viewer') {
+        alert('Create Answer is only for the viewer role.');
+        return;
+      }
+      createAnswer();
+    };
+
+    setRemoteAnswerBtn.onclick = () => {
+      if (roleSelect.value !== 'sender') {
+        alert('Set Remote Answer is only for the sender role.');
+        return;
+      }
+      setRemoteAnswer();
+    };
+  </script>
+</body>
+</html>
