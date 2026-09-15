@@ -3,354 +3,254 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Android Camera → PC (WebRTC)</title>
+  <title>Live Camera Stream</title>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
-    :root { font-family: system-ui, sans-serif; }
-    body { margin: 1rem; max-width: 960px; margin-inline: auto; }
-    video {
-      width: 100%;
-      max-width: 480px;
-      background: #111;
-      border-radius: 8px;
-      aspect-ratio: 16/9;
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 1.2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
-    textarea {
+    h1 { font-size: 1.5rem; margin-bottom: 0.8rem; }
+    .card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 1.2rem;
       width: 100%;
-      height: 140px;
-      font-family: ui-monospace, monospace;
-      font-size: 12px;
-      resize: vertical;
+      max-width: 520px;
+      margin-bottom: 1rem;
+    }
+    label { display: block; margin-bottom: 0.3rem; font-size: 0.9rem; color: #94a3b8; }
+    select, input {
+      width: 100%;
+      padding: 0.6rem;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background: #0f172a;
+      color: white;
+      font-size: 1rem;
+      margin-bottom: 0.8rem;
     }
     button {
-      margin: 0.25rem 0.25rem 0.25rem 0;
-      padding: 0.45rem 0.9rem;
+      width: 100%;
+      padding: 0.75rem;
+      border: none;
+      border-radius: 8px;
+      background: #3b82f6;
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
       cursor: pointer;
+      margin-bottom: 0.5rem;
     }
-    .row { display: flex; flex-wrap: wrap; gap: 1.5rem; }
-    .col { flex: 1 1 300px; min-width: 280px; }
-    .status {
-      font-family: ui-monospace, monospace;
-      font-size: 13px;
-      background: #f4f4f4;
-      padding: 0.6rem 0.8rem;
-      border-radius: 6px;
-      margin: 0.8rem 0;
-      white-space: pre-wrap;
+    button.secondary { background: #475569; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    video {
+      width: 100%;
+      max-width: 520px;
+      background: #000;
+      border-radius: 12px;
+      aspect-ratio: 16/9;
+      margin-top: 0.8rem;
     }
-    .hint { color: #555; font-size: 0.95rem; }
-    h1 { margin-top: 0; }
-    label { font-weight: 600; }
+    #status {
+      margin-top: 0.8rem;
+      font-size: 0.9rem;
+      color: #94a3b8;
+      text-align: center;
+      min-height: 1.4em;
+    }
+    .error { color: #f87171; }
+    .success { color: #4ade80; }
+    .hint { font-size: 0.85rem; color: #64748b; margin-top: 0.6rem; line-height: 1.4; }
   </style>
 </head>
 <body>
-  <h1>Android Camera → PC (WebRTC)</h1>
+  <h1>Live Camera Stream</h1>
 
-  <p class="hint">
-    <strong>How to use (manual signaling – works on GitHub Pages):</strong><br>
-    1. On <strong>phone</strong>: choose “Camera Sender”, Start Camera → Create Offer → Copy → send the text to the PC (chat, email, etc.).<br>
-    2. On <strong>PC</strong>: choose “Viewer”, paste the offer → Create Answer → Copy → send the answer back to the phone.<br>
-    3. On <strong>phone</strong>: paste the answer → Set Remote Answer. Video should appear on the PC.
-  </p>
+  <div class="card">
+    <label>Mode</label>
+    <select id="mode">
+      <option value="broadcast">Broadcast (Android phone)</option>
+      <option value="watch">Watch (anyone)</option>
+    </select>
 
-  <div>
-    <label>
-      Role:
-      <select id="role">
-        <option value="sender">Camera Sender (Android)</option>
-        <option value="viewer">Viewer (PC)</option>
-      </select>
-    </label>
-  </div>
+    <label>Stream ID (choose any simple name)</label>
+    <input id="streamId" type="text" placeholder="e.g. mycam or room1" value="mycam" />
 
-  <div class="status" id="status">Status: idle</div>
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" class="secondary" disabled>Stop</button>
 
-  <div class="row">
-    <div class="col">
-      <h2>Local (this device)</h2>
-      <video id="localVideo" autoplay playsinline muted></video><br>
-      <button id="startCameraBtn">Start Camera</button>
-      <button id="stopCameraBtn" disabled>Stop Camera</button>
-    </div>
-    <div class="col">
-      <h2>Remote (other device)</h2>
-      <video id="remoteVideo" autoplay playsinline></video>
+    <div class="hint">
+      <strong>Broadcast:</strong> Open this page on your phone → choose Broadcast → Start.<br>
+      <strong>Watch:</strong> Open the same page on any device → choose Watch → enter the same Stream ID → Start.
     </div>
   </div>
 
-  <hr>
-
-  <h2>Signaling (copy / paste between devices)</h2>
-
-  <div class="row">
-    <div class="col">
-      <h3>Offer (sender → viewer)</h3>
-      <textarea id="offerBox" placeholder="Sender creates the offer here…"></textarea><br>
-      <button id="createOfferBtn">Create Offer</button>
-      <button id="copyOfferBtn">Copy Offer</button>
-    </div>
-    <div class="col">
-      <h3>Answer (viewer → sender)</h3>
-      <textarea id="answerBox" placeholder="Viewer creates the answer here…"></textarea><br>
-      <button id="createAnswerBtn">Create Answer</button>
-      <button id="copyAnswerBtn">Copy Answer</button>
-      <button id="setRemoteAnswerBtn">Set Remote Answer (sender)</button>
-    </div>
-  </div>
+  <video id="video" autoplay playsinline muted></video>
+  <div id="status">Ready</div>
 
   <script>
-    const roleSelect = document.getElementById('role');
-    const localVideo = document.getElementById('localVideo');
-    const remoteVideo = document.getElementById('remoteVideo');
+    const modeSelect = document.getElementById('mode');
+    const streamIdInput = document.getElementById('streamId');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const video = document.getElementById('video');
     const statusEl = document.getElementById('status');
 
-    const startCameraBtn = document.getElementById('startCameraBtn');
-    const stopCameraBtn = document.getElementById('stopCameraBtn');
-    const createOfferBtn = document.getElementById('createOfferBtn');
-    const createAnswerBtn = document.getElementById('createAnswerBtn');
-    const setRemoteAnswerBtn = document.getElementById('setRemoteAnswerBtn');
-    const copyOfferBtn = document.getElementById('copyOfferBtn');
-    const copyAnswerBtn = document.getElementById('copyAnswerBtn');
-
-    const offerBox = document.getElementById('offerBox');
-    const answerBox = document.getElementById('answerBox');
-
-    let pc = null;
+    let peer = null;
     let localStream = null;
+    let currentCall = null;
 
-    // Multiple public STUN servers help with connectivity
-    const iceServers = [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
-      { urls: 'stun:stun.stunprotocol.org:3478' },
-      { urls: 'stun:stun.services.mozilla.com' }
-    ];
-
-    function log(msg) {
-      const time = new Date().toLocaleTimeString();
-      statusEl.textContent = `[${time}] ${msg}`;
-      console.log(msg);
+    function setStatus(msg, type = '') {
+      statusEl.textContent = msg;
+      statusEl.className = type;
     }
 
-    function createPeerConnection() {
-      if (pc) {
-        pc.close();
+    function cleanup() {
+      if (currentCall) {
+        currentCall.close();
+        currentCall = null;
       }
-      pc = new RTCPeerConnection({ iceServers });
-
-      pc.onicecandidate = (e) => {
-        // We wait for the null candidate (gathering finished)
-        if (!e.candidate) {
-          log('ICE gathering complete');
-        }
-      };
-
-      pc.onicegatheringstatechange = () => {
-        log(`ICE gathering state: ${pc.iceGatheringState}`);
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        log(`ICE connection state: ${pc.iceConnectionState}`);
-      };
-
-      pc.onconnectionstatechange = () => {
-        log(`Connection state: ${pc.connectionState}`);
-        if (pc.connectionState === 'connected') {
-          log('✅ Connected! Video should be flowing.');
-        } else if (pc.connectionState === 'failed') {
-          log('❌ Connection failed. Try again or check network (may need TURN).');
-        }
-      };
-
-      pc.ontrack = (event) => {
-        log('Remote track received');
-        remoteVideo.srcObject = event.streams[0];
-      };
-    }
-
-    // Helper: wait until ICE gathering is finished
-    function waitForIceGatheringComplete() {
-      return new Promise((resolve) => {
-        if (pc.iceGatheringState === 'complete') {
-          resolve();
-          return;
-        }
-        const check = () => {
-          if (pc.iceGatheringState === 'complete') {
-            pc.removeEventListener('icegatheringstatechange', check);
-            resolve();
-          }
-        };
-        pc.addEventListener('icegatheringstatechange', check);
-        // Safety timeout (some browsers are slow)
-        setTimeout(() => {
-          pc.removeEventListener('icegatheringstatechange', check);
-          resolve();
-        }, 8000);
-      });
-    }
-
-    async function startCamera() {
-      try {
-        // Prefer rear camera on phones, fall back to any
-        const constraints = {
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: { ideal: 'environment' }
-          },
-          audio: false
-        };
-        localStream = await navigator.mediaDevices.getUserMedia(constraints);
-        localVideo.srcObject = localStream;
-
-        if (!pc) createPeerConnection();
-
-        // Clear old tracks first
-        pc.getSenders().forEach(s => pc.removeTrack(s));
-        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-
-        startCameraBtn.disabled = true;
-        stopCameraBtn.disabled = false;
-        log('Camera started');
-      } catch (err) {
-        console.error(err);
-        log('Camera error: ' + err.message);
-        alert('Could not start camera: ' + err.message);
+      if (peer) {
+        peer.destroy();
+        peer = null;
       }
-    }
-
-    function stopCamera() {
       if (localStream) {
         localStream.getTracks().forEach(t => t.stop());
         localStream = null;
-        localVideo.srcObject = null;
       }
-      startCameraBtn.disabled = false;
-      stopCameraBtn.disabled = true;
-      log('Camera stopped');
+      video.srcObject = null;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
     }
 
-    // Sender side
-    async function createOffer() {
-      if (roleSelect.value !== 'sender') {
-        alert('Switch role to “Camera Sender” first.');
-        return;
-      }
-      if (!localStream) {
-        alert('Start the camera first.');
-        return;
-      }
-      if (!pc) createPeerConnection();
-
+    async function startBroadcast(id) {
       try {
-        log('Creating offer…');
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+        setStatus('Starting camera…');
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        video.srcObject = localStream;
+        video.muted = true;
 
-        log('Waiting for ICE candidates…');
-        await waitForIceGatheringComplete();
+        peer = new Peer(id, {
+          debug: 1,
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+          }
+        });
 
-        // Now the SDP contains all candidates
-        offerBox.value = JSON.stringify(pc.localDescription);
-        log('Offer ready – copy it to the viewer');
+        peer.on('open', (myId) => {
+          setStatus(`Broadcasting as "${myId}" – anyone can watch with this ID`, 'success');
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+        });
+
+        peer.on('call', (call) => {
+          setStatus('Viewer connected!', 'success');
+          call.answer(localStream);          // send our camera to the viewer
+          currentCall = call;
+
+          call.on('close', () => {
+            setStatus('Viewer disconnected');
+          });
+        });
+
+        peer.on('error', (err) => {
+          console.error(err);
+          setStatus('Error: ' + err.type, 'error');
+          if (err.type === 'unavailable-id') {
+            setStatus('That Stream ID is already in use. Pick another one.', 'error');
+          }
+        });
+
       } catch (err) {
         console.error(err);
-        log('Create offer failed: ' + err.message);
+        setStatus('Camera error: ' + err.message, 'error');
+        cleanup();
       }
     }
 
-    // Viewer side
-    async function createAnswer() {
-      if (roleSelect.value !== 'viewer') {
-        alert('Switch role to “Viewer” first.');
-        return;
-      }
-      if (!offerBox.value.trim()) {
-        alert('Paste the offer from the phone first.');
-        return;
-      }
+    function startWatch(id) {
+      setStatus('Connecting…');
 
-      try {
-        if (!pc) createPeerConnection();
+      peer = new Peer({
+        debug: 1,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+          ]
+        }
+      });
 
-        const offer = JSON.parse(offerBox.value.trim());
-        await pc.setRemoteDescription(offer);
-        log('Remote offer set');
+      peer.on('open', () => {
+        const call = peer.call(id, null);   // call the broadcaster (no local media needed)
+        if (!call) {
+          setStatus('Could not start call', 'error');
+          return;
+        }
+        currentCall = call;
 
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
+        call.on('stream', (remoteStream) => {
+          video.srcObject = remoteStream;
+          video.muted = false;
+          setStatus('Connected – watching live', 'success');
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+        });
 
-        log('Waiting for ICE candidates…');
-        await waitForIceGatheringComplete();
+        call.on('close', () => {
+          setStatus('Stream ended');
+          cleanup();
+        });
 
-        answerBox.value = JSON.stringify(pc.localDescription);
-        log('Answer ready – copy it back to the phone');
-      } catch (err) {
+        call.on('error', (err) => {
+          setStatus('Call error: ' + err, 'error');
+        });
+      });
+
+      peer.on('error', (err) => {
         console.error(err);
-        log('Create answer failed: ' + err.message);
-        alert('Error: ' + err.message);
-      }
+        setStatus('Error: ' + err.type + (err.type === 'peer-unavailable' ? ' – is the phone broadcasting?' : ''), 'error');
+      });
     }
 
-    // Sender receives the answer
-    async function setRemoteAnswer() {
-      if (roleSelect.value !== 'sender') {
-        alert('This button is only for the sender (phone).');
+    startBtn.onclick = () => {
+      const id = streamIdInput.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (!id) {
+        setStatus('Please enter a Stream ID', 'error');
         return;
       }
-      if (!answerBox.value.trim()) {
-        alert('Paste the answer from the PC first.');
-        return;
-      }
-      if (!pc) {
-        alert('Create an offer first.');
-        return;
-      }
+      streamIdInput.value = id;
 
-      try {
-        const answer = JSON.parse(answerBox.value.trim());
-        await pc.setRemoteDescription(answer);
-        log('Remote answer set – connection should establish shortly');
-      } catch (err) {
-        console.error(err);
-        log('Set remote answer failed: ' + err.message);
-        alert('Error: ' + err.message);
+      cleanup();
+
+      if (modeSelect.value === 'broadcast') {
+        startBroadcast(id);
+      } else {
+        startWatch(id);
       }
-    }
-
-    // UI wiring
-    startCameraBtn.onclick = () => {
-      if (roleSelect.value !== 'sender') {
-        alert('Only the sender (phone) starts the camera.');
-        return;
-      }
-      startCamera();
-    };
-    stopCameraBtn.onclick = stopCamera;
-
-    createOfferBtn.onclick = createOffer;
-    createAnswerBtn.onclick = createAnswer;
-    setRemoteAnswerBtn.onclick = setRemoteAnswer;
-
-    copyOfferBtn.onclick = () => {
-      offerBox.select();
-      navigator.clipboard.writeText(offerBox.value)
-        .then(() => log('Offer copied to clipboard'))
-        .catch(() => log('Select the text and copy manually'));
-    };
-    copyAnswerBtn.onclick = () => {
-      answerBox.select();
-      navigator.clipboard.writeText(answerBox.value)
-        .then(() => log('Answer copied to clipboard'))
-        .catch(() => log('Select the text and copy manually'));
     };
 
-    // Initial peer connection so status events work
-    createPeerConnection();
-    log('Ready – choose role and follow the steps');
+    stopBtn.onclick = () => {
+      cleanup();
+      setStatus('Stopped');
+    };
+
+    // Clean up when leaving the page
+    window.addEventListener('beforeunload', cleanup);
   </script>
 </body>
 </html>
