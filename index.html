@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Live Camera Stream — resilient</title>
+  <title>Live Camera Stream</title>
   <script src="peerjs.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -107,8 +107,8 @@
 
     <div class="hint">
       <b>Phone:</b> Broadcast → Start<br>
-      <b>Other device:</b> Watch → same Stream ID → Start<br>
-      Auto-reconnect is aggressive. If it still drops across different networks, add TURN credentials in the script (search for TURN_PLACEHOLDER).
+      <b>Other device:</b> Watch → type the exact same Stream ID → Start<br>
+      If you get “ID is taken”, change the Stream ID (e.g. mycam2) and try again.
     </div>
   </div>
 
@@ -117,7 +117,7 @@
 
   <div class="card" style="max-width:520px;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-      <label style="margin:0;">Debug log</label>
+      <label style="margin:0;">Debug log (errors are NOT hidden)</label>
       <button id="clearLogBtn" class="secondary" style="width:auto; padding:0.3rem 0.7rem; margin:0; font-size:0.8rem;">Clear</button>
     </div>
     <div id="debugLog"></div>
@@ -137,56 +137,19 @@
     let dataConn = null;
     let currentMode = null;
     let currentId = null;
-    let retryTimeout = null;
-    let reconnectTimeout = null;
-    let connectTimeout = null;
+    let retryTimeout = null;       // for retrying after a peer/network error
+    let reconnectTimeout = null;   // for retrying after a watchdog-detected ICE drop
+    let connectTimeout = null;     // hard cap on "Connecting…" so it can't hang forever
     let watchdogInterval = null;
-    let keepaliveInterval = null;
     let manualStop = false;
-    let reconnecting = false;
-    let lastViewerId = null;       // broadcaster remembers last viewer to re-call
-    let reconnectAttempt = 0;
+    let reconnecting = false;      // true while a reconnect is already scheduled/in-flight
 
-    // ---------- ICE / TURN ----------
-    // STUN-only works on many home networks. Across strict NAT / mobile carriers
-    // you NEED TURN. Free static openrelay creds are dead — get free temporary
-    // ones from https://www.metered.ca/tools/openrelay (free account) or
-    // https://rstream.io/tools/turn-server and paste them under TURN_PLACEHOLDER.
     const ICE_CONFIG = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' }
-        // TURN_PLACEHOLDER — uncomment and fill after you get credentials:
-        // ,{
-        //   urls: [
-        //     'turn:openrelay.metered.ca:80',
-        //     'turn:openrelay.metered.ca:443',
-        //     'turn:openrelay.metered.ca:443?transport=tcp'
-        //   ],
-        //   username: 'YOUR_USERNAME',
-        //   credential: 'YOUR_PASSWORD'
-        // }
-      ],
-      iceCandidatePoolSize: 10
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
     };
-
-    const RECONNECT_BASE_MS = 800;
-    const RECONNECT_MAX_MS = 4000;
-    const CONNECT_TIMEOUT_MS = 12000;
-    const WATCHDOG_MS = 1500;
-
-    function backoffMs() {
-      const ms = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(1.4, reconnectAttempt));
-      reconnectAttempt = Math.min(reconnectAttempt + 1, 8);
-      return ms;
-    }
-
-    function resetBackoff() {
-      reconnectAttempt = 0;
-    }
 
     function clearWatchdog() {
       if (watchdogInterval) {
@@ -196,107 +159,98 @@
       watchdogCheckFn = null;
     }
 
-    function clearKeepalive() {
-      if (keepaliveInterval) {
-        clearInterval(keepaliveInterval);
-        keepaliveInterval = null;
-      }
-    }
-
     function watchIceState(call, onBad) {
       clearWatchdog();
+      let restartAttempted = false;
       const check = () => {
         const pc = call && call.peerConnection;
         if (!pc) return;
-        const ice = pc.iceConnectionState;
-        const conn = pc.connectionState;
-        if (
-          ice === 'disconnected' || ice === 'failed' || ice === 'closed' ||
-          conn === 'failed' || conn === 'closed'
-        ) {
+        const state = pc.iceConnectionState;
+
+        if (state === 'disconnected' && !restartAttempted) {
+          // PeerJS itself does NOT close the call on 'disconnected' — it
+          // only closes on 'failed' or 'closed' (confirmed by reading
+          // peerjs.min.js directly). 'disconnected' can be transient, so
+          // try a plain browser-native ICE restart first, purely local,
+          // before treating this as a dead connection.
+          restartAttempted = true;
+          logToPanel('iceConnectionState = disconnected — attempting ICE restart before giving up', 'log-warn');
+          if (typeof pc.restartIce === 'function') {
+            try { pc.restartIce(); } catch (e) { logToPanel(`restartIce() threw: ${e.message}`, 'log-error'); }
+          }
+          return; // give it a couple more poll cycles to recover on its own
+        }
+
+        if (state === 'connected' || state === 'completed') {
+          restartAttempted = false; // recovered on its own — reset for next time
+          return;
+        }
+
+        if (state === 'failed' || state === 'closed') {
           clearWatchdog();
-          onBad(ice || conn);
+          onBad(state);
         }
       };
       watchdogCheckFn = check;
-      watchdogInterval = setInterval(check, WATCHDOG_MS);
+      watchdogInterval = setInterval(check, 2000);
     }
 
     function scheduleReconnect(id) {
       if (manualStop || reconnecting) return;
       reconnecting = true;
-      const delay = backoffMs();
-      logToPanel(`scheduleReconnect in ${Math.round(delay)}ms (attempt ${reconnectAttempt})`, 'log-warn');
       reconnectTimeout = setTimeout(() => {
-        if (manualStop || currentMode !== 'watch') {
-          reconnecting = false;
-          return;
-        }
-        cleanup({ keepCamera: false });
+        if (manualStop || currentMode !== 'watch') return;
+        cleanup();
         startWatch(id);
-      }, delay);
+      }, 1500);
     }
 
     function stopReconnect() {
       reconnecting = false;
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-        reconnectTimeout = null;
-      }
+      if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
     }
 
-    // Screen Wake Lock
+    // Screen Wake Lock: prevents the display/tab from sleeping mid-stream.
+    // This matters mainly on desktop — a phone that's actively capturing
+    // video via getUserMedia tends to stay awake on its own, but a desktop
+    // browser tab can get throttled in the background, or the screen can
+    // lock/sleep, quietly killing the connection while it looks "frozen".
     let wakeLock = null;
     async function requestWakeLock() {
       try {
         if ('wakeLock' in navigator) {
           wakeLock = await navigator.wakeLock.request('screen');
           wakeLock.addEventListener('release', () => { wakeLock = null; });
-          logToPanel('wake lock acquired', 'log-info');
         }
       } catch (e) {
+        // Not fatal — some browsers/contexts (e.g. non-HTTPS) reject this.
         console.warn('Wake lock unavailable:', e);
       }
     }
     function releaseWakeLock() {
-      if (wakeLock) {
-        try { wakeLock.release(); } catch (e) {}
-        wakeLock = null;
-      }
+      if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
     }
     document.addEventListener('visibilitychange', () => {
       logToPanel(`document visibility = ${document.visibilityState}`, 'log-state');
       if (document.visibilityState === 'visible') {
         if (peer && !peer.destroyed) requestWakeLock();
+        // Background tabs can have timers throttled to once a minute or
+        // less, delaying our watchdog. Force an immediate re-check as soon
+        // as the tab is foregrounded again so a stale drop is caught fast.
         forceWatchdogCheck();
-        // If we are supposed to be live, nudge a reconnect attempt
-        if (!manualStop && currentMode === 'watch' && !reconnecting) {
-          const pc = currentCall && currentCall.peerConnection;
-          if (pc && (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')) {
-            scheduleReconnect(currentId);
-          }
-        }
       }
     });
 
+    // These fire from the OS/browser's own network stack, independent of
+    // WebRTC or PeerJS. If one of these logs right when a drop happens, it
+    // confirms the local network interface itself blipped (Wi-Fi power
+    // saving, adapter sleep/reconnect, roaming, VPN reconnect) rather than
+    // anything on the phone/broadcaster side or a server-side timeout.
     window.addEventListener('offline', () => logToPanel('window "offline" event — OS reports network is down', 'log-error'));
-    window.addEventListener('online', () => {
-      logToPanel('window "online" event — OS reports network is back', 'log-info');
-      if (!manualStop && currentMode) {
-        // Network came back — force a recovery pass
-        forceWatchdogCheck();
-        if (currentMode === 'watch') scheduleReconnect(currentId);
-        else if (currentMode === 'broadcast' && lastViewerId && peer && !peer.destroyed) {
-          setTimeout(() => answerViewer(lastViewerId), 500);
-        }
-      }
-    });
+    window.addEventListener('online', () => logToPanel('window "online" event — OS reports network is back', 'log-info'));
     if (navigator.connection) {
       navigator.connection.addEventListener('change', () => {
-        logToPanel(
-          `network connection changed: type=${navigator.connection.effectiveType || navigator.connection.type}, downlink=${navigator.connection.downlink}Mbps`,
-          'log-state'
-        );
+        logToPanel(`network connection changed: type=${navigator.connection.effectiveType || navigator.connection.type}, downlink=${navigator.connection.downlink}Mbps`, 'log-state');
       });
     }
 
@@ -312,14 +266,26 @@
       const time = new Date().toLocaleTimeString();
       const line = document.createElement('div');
       line.innerHTML = `<span class="log-time">[${time}]</span> <span class="${cls}">${
-        String(msg).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+        String(msg).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))
       }</span>`;
       debugLogEl.appendChild(line);
       debugLogEl.scrollTop = debugLogEl.scrollHeight;
     }
 
+    // Surface EVERYTHING to the on-page panel — nothing gets swallowed.
+    // Checked the actual peerjs.min.js source: its logger calls
+    // console.error(...) at level 1, console.warn(...) at level 2, but its
+    // most detailed diagnostic messages — including the exact line that
+    // explains WHY it closes a connection, e.g.
+    // "iceConnectionState is failed, closing connections to X" — are only
+    // emitted via plain console.log(...) at level 3 ("All"). Only
+    // intercepting error/warn was missing exactly the message that answers
+    // "why is this happening". Fixed by intercepting console.log too and
+    // setting debug:3 below so PeerJS actually emits it.
+    const _origLog = console.log.bind(console);
     const _origError = console.error.bind(console);
     const _origWarn = console.warn.bind(console);
+    console.log = (...args) => { _origLog(...args); logToPanel(args.map(String).join(' '), 'log-info'); };
     console.error = (...args) => { _origError(...args); logToPanel(args.map(String).join(' '), 'log-error'); };
     console.warn = (...args) => { _origWarn(...args); logToPanel(args.map(String).join(' '), 'log-warn'); };
 
@@ -330,11 +296,13 @@
       logToPanel(`Unhandled promise rejection: ${e.reason}`, 'log-error');
     });
 
+    // Attach live state-change logging to a peer connection. This reports
+    // changes the instant they happen, rather than waiting for the 2s
+    // watchdog poll — useful for seeing exactly which state a connection
+    // gets stuck in (e.g. stuck at "checking" = ICE/TURN can't complete;
+    // "disconnected" then "failed" = path died after connecting).
     function attachPCLogging(pc, label) {
-      if (!pc) {
-        logToPanel(`${label}: no RTCPeerConnection to attach to`, 'log-warn');
-        return;
-      }
+      if (!pc) { logToPanel(`${label}: no RTCPeerConnection to attach to`, 'log-warn'); return; }
       logToPanel(`${label}: peer connection created`, 'log-state');
       pc.addEventListener('iceconnectionstatechange', () => {
         logToPanel(`${label}: iceConnectionState = ${pc.iceConnectionState}`, 'log-state');
@@ -358,44 +326,29 @@
       statusEl.className = type;
     }
 
-    /**
-     * @param {{ keepCamera?: boolean }} opts
-     * keepCamera=true on broadcast so we don't kill getUserMedia during a re-call
-     */
-    function cleanup(opts = {}) {
-      const keepCamera = !!opts.keepCamera;
+    function cleanup() {
       clearWatchdog();
-      clearKeepalive();
       releaseWakeLock();
       if (retryTimeout) { clearTimeout(retryTimeout); retryTimeout = null; }
       if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
-      // reconnectTimeout intentionally NOT cleared here (same reason as before)
-
+      // NOTE: reconnectTimeout is intentionally NOT cleared here. When an ICE
+      // connection dies, PeerJS fires the call's 'close' event, whose handler
+      // calls cleanup(). If cleanup() also cancelled a reconnect that the
+      // watchdog just scheduled, the retry would never happen and the UI
+      // would hang. Full-stop paths (Stop button, manual Start) clear it
+      // explicitly instead — see stopReconnect().
       try {
-        if (currentCall) {
-          try { currentCall.close(); } catch (e) {}
-          currentCall = null;
-        }
-        if (dataConn) {
-          try { dataConn.close(); } catch (e) {}
-          dataConn = null;
-        }
-        if (peer) {
-          try { peer.destroy(); } catch (e) {}
-          peer = null;
-        }
-        if (localStream && !keepCamera) {
+        if (currentCall) { currentCall.close(); currentCall = null; }
+        if (dataConn) { dataConn.close(); dataConn = null; }
+        if (peer) { peer.destroy(); peer = null; }
+        if (localStream) {
           localStream.getTracks().forEach(t => t.stop());
           localStream = null;
-          video.srcObject = null;
         }
       } catch (e) {
         logToPanel(`cleanup() error: ${e.message}`, 'log-error');
       }
-
-      if (!keepCamera) {
-        video.srcObject = null;
-      }
+      video.srcObject = null;
       startBtn.disabled = false;
       stopBtn.disabled = true;
     }
@@ -405,17 +358,14 @@
       try {
         setStatus('Starting camera…');
 
-        if (!localStream) {
-          localStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: { ideal: 'environment' },
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-              frameRate: { ideal: 24, max: 30 }
-            },
-            audio: false
-          });
-        }
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
 
         video.srcObject = localStream;
         video.muted = true;
@@ -424,24 +374,19 @@
         currentId = id;
         manualStop = false;
         reconnecting = false;
-        resetBackoff();
         requestWakeLock();
 
+        // Create the peer
         peer = new Peer(id, {
-          debug: 2,
+          debug: 3, // 0=none 1=errors 2=+warnings 3=+all logs — level 3 is what actually reveals PeerJS's own reasoning (e.g. why it closed a call)
           config: ICE_CONFIG
         });
 
         peer.on('open', (myId) => {
           logToPanel(`peer open, broadcasting as "${myId}"`, 'log-info');
-          setStatus(`Broadcasting as "${myId}" — waiting for viewer`, 'success');
+          setStatus(`Broadcasting as "${myId}"`, 'success');
           startBtn.disabled = true;
           stopBtn.disabled = false;
-          // If we already knew a viewer from a previous session, re-call
-          if (lastViewerId) {
-            logToPanel(`re-calling previous viewer "${lastViewerId}"`, 'log-info');
-            setTimeout(() => answerViewer(lastViewerId), 400);
-          }
         });
 
         peer.on('connection', (conn) => {
@@ -449,62 +394,71 @@
           dataConn = conn;
           conn.on('data', (viewerId) => {
             logToPanel(`viewer id received: "${viewerId}" — calling…`, 'log-info');
-            lastViewerId = viewerId;
             setStatus('Viewer joined – sending camera…', 'success');
             answerViewer(viewerId);
           });
           conn.on('error', (e) => logToPanel(`data connection error: ${e}`, 'log-error'));
-          conn.on('close', () => logToPanel('data connection closed', 'log-warn'));
         });
+
+        function answerViewer(viewerId) {
+          reconnecting = false;
+          currentCall = peer.call(viewerId, localStream);
+          attachPCLogging(currentCall.peerConnection, `call→${viewerId}`);
+          currentCall.on('error', (e) => logToPanel(`call error: ${e}`, 'log-error'));
+          currentCall.on('close', () => {
+            // If the watchdog already flagged this as a bad ICE state,
+            // a re-call is already scheduled below — don't overwrite that
+            // status with a plain "Viewer left".
+            if (!reconnecting) { logToPanel('call closed (viewer left)', 'log-warn'); setStatus('Viewer left'); }
+          });
+
+          // Watch the connection. Desktops are the side that most often
+          // drops silently (screen lock, sleep, background-tab throttling,
+          // Wi-Fi power saving, NAT rebinding) while a phone actively
+          // capturing video usually stays up. Rather than only waiting for
+          // the viewer to notice and reconnect, the broadcaster proactively
+          // re-calls the same viewer id — whichever side recovers first wins.
+          watchIceState(currentCall, (state) => {
+            reconnecting = true;
+            logToPanel(`ICE state "${state}" detected by watchdog — re-calling viewer`, 'log-warn');
+            setStatus(`Connection ${state} — re-calling viewer…`, 'error');
+            retryTimeout = setTimeout(() => {
+              if (manualStop || currentMode !== 'broadcast' || !peer) return;
+              answerViewer(viewerId);
+            }, 2000);
+          });
+        }
 
         peer.on('disconnected', () => {
           if (manualStop) return;
           logToPanel('peer disconnected from signaling server', 'log-warn');
-          setStatus('Lost signaling — reconnecting…', 'error');
-          try { peer.reconnect(); } catch (e) {
-            logToPanel(`peer.reconnect() threw: ${e.message}`, 'log-error');
-            // Full restart of broadcast peer (keep camera)
-            if (!manualStop) {
-              retryTimeout = setTimeout(() => {
-                if (manualStop || currentMode !== 'broadcast') return;
-                cleanup({ keepCamera: true });
-                startBroadcast(id);
-              }, backoffMs());
-            }
-          }
+          setStatus('Lost connection to signaling server, reconnecting…', 'error');
+          try { peer.reconnect(); } catch (e) { logToPanel(`peer.reconnect() threw: ${e.message}`, 'log-error'); }
         });
 
         peer.on('error', (err) => {
           console.error(err);
           if (err.type === 'unavailable-id') {
+            // The old session's ID is likely still held by the server from
+            // an unclean disconnect. Destroy this peer and retry shortly
+            // instead of giving up immediately.
             setStatus('ID busy (stale session?) — retrying…', 'error');
-            if (peer) {
-              try { peer.destroy(); } catch (e) {}
-              peer = null;
-            }
+            if (peer) { try { peer.destroy(); } catch (e) { logToPanel(`peer.destroy() threw: ${e.message}`, 'log-error'); } peer = null; }
             if (!manualStop) {
               retryTimeout = setTimeout(() => {
                 if (!manualStop && currentMode === 'broadcast') startBroadcast(id);
-              }, 2500);
+              }, 3000);
             }
-          } else if (
-            err.type === 'network' ||
-            err.type === 'server-error' ||
-            err.type === 'socket-error' ||
-            err.type === 'socket-closed'
-          ) {
+          } else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error' || err.type === 'socket-closed') {
             setStatus('Connection problem — retrying…', 'error');
             if (!manualStop) {
               retryTimeout = setTimeout(() => {
-                if (!manualStop && currentMode === 'broadcast') {
-                  cleanup({ keepCamera: true });
-                  startBroadcast(id);
-                }
-              }, backoffMs());
+                if (!manualStop && currentMode === 'broadcast') startBroadcast(id);
+              }, 3000);
             }
           } else {
             setStatus('Error: ' + err.type, 'error');
-            // Don't full-cleanup camera on random errors; user can Stop
+            cleanup();
           }
         });
 
@@ -515,58 +469,10 @@
       }
     }
 
-    function answerViewer(viewerId) {
-      if (!peer || peer.destroyed || !localStream) {
-        logToPanel('answerViewer: peer or stream missing', 'log-warn');
-        return;
-      }
-      reconnecting = false;
-      resetBackoff();
-      lastViewerId = viewerId;
-
-      // Close previous call if any
-      if (currentCall) {
-        try { currentCall.close(); } catch (e) {}
-        currentCall = null;
-      }
-
-      try {
-        currentCall = peer.call(viewerId, localStream);
-      } catch (e) {
-        logToPanel(`peer.call threw: ${e.message}`, 'log-error');
-        return;
-      }
-
-      if (!currentCall) {
-        logToPanel('peer.call returned null', 'log-error');
-        return;
-      }
-
-      attachPCLogging(currentCall.peerConnection, `call→${viewerId}`);
-      currentCall.on('error', (e) => logToPanel(`call error: ${e}`, 'log-error'));
-      currentCall.on('close', () => {
-        if (!reconnecting) {
-          logToPanel('call closed (viewer left or path died)', 'log-warn');
-          setStatus('Viewer left / path died — will re-call if they reconnect');
-        }
-      });
-
-      watchIceState(currentCall, (state) => {
-        reconnecting = true;
-        logToPanel(`ICE state "${state}" — re-calling viewer in a moment`, 'log-warn');
-        setStatus(`Connection ${state} — re-calling viewer…`, 'error');
-        const delay = backoffMs();
-        retryTimeout = setTimeout(() => {
-          if (manualStop || currentMode !== 'broadcast' || !peer || peer.destroyed) return;
-          answerViewer(viewerId);
-        }, delay);
-      });
-    }
-
     // ========== WATCH ==========
     function startWatch(id) {
       setStatus('Connecting…');
-      logToPanel(`startWatch("${id}") attempt=${reconnectAttempt}`, 'log-info');
+      logToPanel(`startWatch("${id}")`, 'log-info');
       currentMode = 'watch';
       currentId = id;
       manualStop = false;
@@ -574,117 +480,93 @@
       requestWakeLock();
 
       peer = new Peer({
-        debug: 2,
+        debug: 3, // 0=none 1=errors 2=+warnings 3=+all logs — level 3 is what actually reveals PeerJS's own reasoning (e.g. why it closed a call)
         config: ICE_CONFIG
       });
 
       peer.on('open', (myId) => {
         logToPanel(`peer open as "${myId}", connecting to broadcaster "${id}"`, 'log-info');
-        dataConn = peer.connect(id, { reliable: true });
+        dataConn = peer.connect(id);
 
         dataConn.on('open', () => {
           logToPanel('data connection open — sending my id to broadcaster', 'log-info');
-          dataConn.send(myId);
+          dataConn.send(myId); // tell the phone our ID
           setStatus('Waiting for stream…');
         });
 
         dataConn.on('error', (e) => {
           logToPanel(`data connection error: ${e}`, 'log-error');
-          setStatus('Could not reach broadcaster — retrying…', 'error');
-          scheduleReconnect(id);
-        });
-
-        dataConn.on('close', () => {
-          logToPanel('data connection closed', 'log-warn');
-          if (!manualStop && !reconnecting) scheduleReconnect(id);
+          setStatus('Could not reach broadcaster', 'error');
         });
       });
 
       peer.on('call', (call) => {
-        logToPanel('incoming call from broadcaster', 'log-info');
+        logToPanel(`incoming call from broadcaster`, 'log-info');
         currentCall = call;
         call.answer(); // receive only
         attachPCLogging(call.peerConnection, 'watch-call');
         call.on('error', (e) => logToPanel(`call error: ${e}`, 'log-error'));
 
-        if (connectTimeout) clearTimeout(connectTimeout);
+        // Hard cap: if we never actually get a stream, don't let the UI
+        // sit on "Connecting…" forever — treat it as a failed attempt and
+        // retry the whole watch flow from scratch.
         connectTimeout = setTimeout(() => {
           if (manualStop || currentMode !== 'watch') return;
           const pc = call.peerConnection;
-          logToPanel(
-            `connect timeout (${CONNECT_TIMEOUT_MS / 1000}s) — ice=${pc && pc.iceConnectionState}, gather=${pc && pc.iceGatheringState}`,
-            'log-error'
-          );
+          logToPanel(`connect timeout (15s) — iceConnectionState was "${pc && pc.iceConnectionState}", iceGatheringState was "${pc && pc.iceGatheringState}"`, 'log-error');
           setStatus('Connection timed out — retrying…', 'error');
           scheduleReconnect(id);
-        }, CONNECT_TIMEOUT_MS);
+        }, 15000);
 
         call.on('stream', (remoteStream) => {
           logToPanel('stream received', 'log-info');
-          if (connectTimeout) {
-            clearTimeout(connectTimeout);
-            connectTimeout = null;
-          }
-          resetBackoff();
+          if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
           video.srcObject = remoteStream;
           video.muted = false;
-          // Some browsers need an explicit play() after a reconnect
-          video.play().catch(() => {});
           setStatus('Connected – watching live', 'success');
           startBtn.disabled = true;
           stopBtn.disabled = false;
 
+          // Watch the connection so a silent NAT/ICE failure doesn't just
+          // freeze the last video frame forever.
           watchIceState(call, (state) => {
-            logToPanel(`ICE state "${state}" — reconnecting`, 'log-warn');
+            logToPanel(`ICE state "${state}" detected by watchdog — reconnecting`, 'log-warn');
             setStatus(`Connection ${state} — reconnecting…`, 'error');
             scheduleReconnect(id);
           });
         });
 
         call.on('close', () => {
+          // If a reconnect is already scheduled (watchdog or timeout caught
+          // this first), let it run instead of overwriting status here.
           if (reconnecting) return;
           logToPanel('call closed (stream ended)', 'log-warn');
-          setStatus('Stream ended — reconnecting…', 'error');
-          scheduleReconnect(id);
+          setStatus('Stream ended');
+          cleanup();
         });
       });
 
       peer.on('disconnected', () => {
         if (manualStop) return;
         logToPanel('peer disconnected from signaling server', 'log-warn');
-        setStatus('Lost signaling — reconnecting…', 'error');
-        try {
-          peer.reconnect();
-        } catch (e) {
-          logToPanel(`peer.reconnect() threw: ${e.message}`, 'log-error');
-          scheduleReconnect(id);
-        }
+        setStatus('Lost connection to signaling server, reconnecting…', 'error');
+        try { peer.reconnect(); } catch (e) { logToPanel(`peer.reconnect() threw: ${e.message}`, 'log-error'); }
       });
 
       peer.on('error', (err) => {
         console.error(err);
         if (err.type === 'peer-unavailable') {
-          setStatus('Stream not found. Is the phone broadcasting? Retrying…', 'error');
-          scheduleReconnect(id);
-        } else if (
-          err.type === 'network' ||
-          err.type === 'server-error' ||
-          err.type === 'socket-error' ||
-          err.type === 'socket-closed'
-        ) {
+          setStatus('Stream not found. Is the phone broadcasting?', 'error');
+        } else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error' || err.type === 'socket-closed') {
           setStatus('Connection problem — retrying…', 'error');
-          if (peer) {
-            try { peer.destroy(); } catch (e) {}
-            peer = null;
-          }
+          if (peer) { try { peer.destroy(); } catch (e) { logToPanel(`peer.destroy() threw: ${e.message}`, 'log-error'); } peer = null; }
           if (!manualStop) {
             retryTimeout = setTimeout(() => {
               if (!manualStop && currentMode === 'watch') startWatch(id);
-            }, backoffMs());
+            }, 3000);
           }
         } else {
-          setStatus('Error: ' + err.type + ' — retrying…', 'error');
-          scheduleReconnect(id);
+          setStatus('Error: ' + err.type, 'error');
         }
       });
     }
@@ -698,11 +580,9 @@
       }
       streamIdInput.value = id;
 
-      manualStop = true;
+      manualStop = true; // cancel any pending retry from a previous session
       stopReconnect();
-      cleanup(); // full clean previous session
-      resetBackoff();
-      lastViewerId = null;
+      cleanup(); // clean previous session
 
       if (modeSelect.value === 'broadcast') {
         startBroadcast(id);
@@ -714,13 +594,12 @@
     stopBtn.onclick = () => {
       manualStop = true;
       currentMode = null;
-      lastViewerId = null;
       stopReconnect();
       cleanup();
       setStatus('Stopped');
     };
 
-    window.addEventListener('beforeunload', () => cleanup());
+    window.addEventListener('beforeunload', cleanup);
   </script>
 </body>
 </html>
