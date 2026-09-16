@@ -69,13 +69,19 @@
       logPanel.scrollTop = logPanel.scrollHeight;
     }
 
-    // Creates a valid synthetic video/audio stream so SDP offer contains proper transceivers
+    // Creates an active synthetic stream to ensure continuous WebRTC packet flow
     function createDummyStream() {
       const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = 2;
+      canvas.width = canvas.height = 10;
       const ctx = canvas.getContext('2d');
-      ctx.fillRect(0, 0, 2, 2);
-      const stream = canvas.captureStream(1);
+      
+      // Active 10fps animation loop forces outbound RTP packets, stopping RFC 7675 timeouts
+      setInterval(() => {
+        ctx.fillStyle = ctx.fillStyle === '#000000' ? '#ffffff' : '#000000';
+        ctx.fillRect(0, 0, 10, 10);
+      }, 100);
+
+      const stream = canvas.captureStream(10);
 
       try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -87,7 +93,7 @@
         audioTrack.enabled = false;
         stream.addTrack(audioTrack);
       } catch (e) {
-        logToPanel('AudioContext dummy track fallback: ' + e.message, 'log-warn');
+        logToPanel('Audio track fallback: ' + e.message, 'log-warn');
       }
 
       return stream;
@@ -108,7 +114,6 @@
         logToPanel(`Peer initialized with ID: ${id}`, 'log-state');
       });
 
-      // Socket disconnect (PeerJS server ping drop) -> reconnect signaling without closing media
       peer.on('disconnected', () => {
         logToPanel('Signaling socket disconnected. Reconnecting signaling...', 'log-warn');
         peer.reconnect();
@@ -151,7 +156,6 @@
         const iceState = pc.iceConnectionState;
         const connState = pc.connectionState;
 
-        // Healthy states
         if (iceState === 'connected' || iceState === 'completed' || connState === 'connected') {
           if (iceFailureTimer) {
             clearTimeout(iceFailureTimer);
@@ -161,12 +165,10 @@
           return;
         }
 
-        // Fatal states
         if (iceState === 'failed' || iceState === 'closed') {
           clearWatchdog();
           onBad(iceState);
         } 
-        // Grace period for transient blips
         else if (iceState === 'disconnected') {
           if (!iceFailureTimer) {
             logToPanel('ICE disconnected — waiting 5s grace period...', 'log-warn');
@@ -187,12 +189,15 @@
 
     function setupCallListeners(call) {
       call.on('stream', (remoteStream) => {
+        // Stop secondary track events from resetting the video pipeline
+        if (remoteVideo.srcObject === remoteStream) return;
+
         logToPanel('Received remote stream track.', 'log-state');
         remoteVideo.srcObject = remoteStream;
-        remoteVideo.muted = true; // Ensure autoplay compliance
+        remoteVideo.muted = true;
         remoteVideo.play()
           .then(() => logToPanel('Remote video playing successfully.', 'log-state'))
-          .catch(err => logToPanel(`Autoplay prevented: ${err.message}. Click Unmute.`, 'log-warn'));
+          .catch(err => logToPanel(`Autoplay note: ${err.message}. Click Unmute.`, 'log-warn'));
       });
 
       call.on('close', () => {
@@ -208,7 +213,6 @@
         logToPanel(`ICE connection lost (${failedState}).`, 'log-err');
         call.close();
         
-        // Viewer-driven reconnect only to prevent race conditions
         if (!isBroadcaster) {
           logToPanel('Viewer initiating reconnection in 3s...', 'log-warn');
           setTimeout(() => {
@@ -236,7 +240,7 @@
         return;
       }
       isBroadcaster = false;
-      logToPanel(`Calling broadcaster (${targetId}) with synthetic stream...`, 'log-state');
+      logToPanel(`Calling broadcaster (${targetId}) with animated dummy stream...`, 'log-state');
       
       const dummyStream = createDummyStream();
       activeCall = peer.call(targetId, dummyStream);
