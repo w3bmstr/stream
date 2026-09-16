@@ -39,6 +39,18 @@
 
     function setStatus(msg) { statusEl.textContent = `Status: ${msg}`; }
 
+    // Generates a lightweight animated stream required by PeerJS constructor
+    function createDummyStream() {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 10;
+      const ctx = canvas.getContext('2d');
+      setInterval(() => {
+        ctx.fillStyle = ctx.fillStyle === '#000000' ? '#ffffff' : '#000000';
+        ctx.fillRect(0, 0, 10, 10);
+      }, 100);
+      return canvas.captureStream(10);
+    }
+
     function initPeer() {
       peer = new Peer({
         config: {
@@ -51,18 +63,20 @@
         }
       });
 
-      peer.on('open', id => document.getElementById('myId').textContent = id);
+      peer.on('open', id => {
+        document.getElementById('myId').textContent = id;
+        setStatus('Ready to connect');
+      });
+
       peer.on('disconnected', () => peer.reconnect());
 
-      // Host receives connection request from viewer
       peer.on('call', call => {
         setStatus('Viewer connected');
         call.answer(localStream);
-        bindIceAutoHealing(call.peerConnection);
+        setTimeout(() => bindIceAutoHealing(call.peerConnection), 500);
       });
     }
 
-    // Handles network blips natively using RTCPeerConnection API
     function bindIceAutoHealing(pc) {
       if (!pc) return;
       pc.oniceconnectionstatechange = () => {
@@ -74,7 +88,7 @@
       };
     }
 
-    // Host Mode (Camera Publisher)
+    // Host Mode
     document.getElementById('hostBtn').addEventListener('click', async () => {
       try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -85,28 +99,33 @@
       }
     });
 
-    // Viewer Mode (Native Receive-Only Setup)
+    // Viewer Mode
     document.getElementById('joinBtn').addEventListener('click', () => {
       const hostId = document.getElementById('targetId').value.trim();
       if (!hostId) return alert('Enter Host ID');
 
+      // 1. Guard against calling before PeerJS signaling is ready
+      if (!peer || !peer.open) {
+        return setStatus('Peer connection not ready yet. Wait a moment and try again.');
+      }
+
       setStatus(`Connecting to host: ${hostId}...`);
       
-      // Pass null media stream to let transceivers handle reception
-      const call = peer.call(hostId, null);
+      // 2. Pass dummy stream to prevent PeerJS from returning undefined
+      const dummyStream = createDummyStream();
+      const call = peer.call(hostId, dummyStream);
 
-      call.on('peerConnection', pc => {
-        // Native transceivers instruct browser to listen for video/audio streams
-        pc.addTransceiver('video', { direction: 'recvonly' });
-        pc.addTransceiver('audio', { direction: 'recvonly' });
-        bindIceAutoHealing(pc);
-      });
+      if (!call) {
+        return setStatus('Failed to initiate call connection.');
+      }
 
       call.on('stream', remoteStream => {
         setStatus('Stream connected and rendering');
         videoEl.srcObject = remoteStream;
         videoEl.play().catch(() => setStatus('Tap screen to play video'));
       });
+
+      setTimeout(() => bindIceAutoHealing(call.peerConnection), 500);
     });
 
     initPeer();
