@@ -147,24 +147,17 @@
     const ICE_CONFIG = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        // Public TURN relay fallback — needed when STUN alone can't punch through
-        // strict NATs/firewalls (common on desktop/corporate networks).
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
+        { urls: 'stun:stun1.l.google.com:19302' }
+        // NOTE: openrelay.metered.ca's free static TURN credentials are dead
+        // (DNS lookup fails — confirmed in the debug log). They've been
+        // removed rather than left in producing noise for zero benefit.
+        // Without a working TURN relay, connections between two networks
+        // that both use strict/symmetric NAT (common on corporate networks
+        // or some ISPs) will fail rather than fall back to a relay path.
+        // If that turns out to be the actual bottleneck here, get free
+        // working TURN credentials from metered.ca (requires a free
+        // account — the days of shared static creds working are over) or
+        // self-host coturn, and add them here.
       ]
     };
 
@@ -227,6 +220,7 @@
       if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
     }
     document.addEventListener('visibilitychange', () => {
+      logToPanel(`document visibility = ${document.visibilityState}`, 'log-state');
       if (document.visibilityState === 'visible') {
         if (peer && !peer.destroyed) requestWakeLock();
         // Background tabs can have timers throttled to once a minute or
@@ -235,6 +229,19 @@
         forceWatchdogCheck();
       }
     });
+
+    // These fire from the OS/browser's own network stack, independent of
+    // WebRTC or PeerJS. If one of these logs right when a drop happens, it
+    // confirms the local network interface itself blipped (Wi-Fi power
+    // saving, adapter sleep/reconnect, roaming, VPN reconnect) rather than
+    // anything on the phone/broadcaster side or a server-side timeout.
+    window.addEventListener('offline', () => logToPanel('window "offline" event — OS reports network is down', 'log-error'));
+    window.addEventListener('online', () => logToPanel('window "online" event — OS reports network is back', 'log-info'));
+    if (navigator.connection) {
+      navigator.connection.addEventListener('change', () => {
+        logToPanel(`network connection changed: type=${navigator.connection.effectiveType || navigator.connection.type}, downlink=${navigator.connection.downlink}Mbps`, 'log-state');
+      });
+    }
 
     let watchdogCheckFn = null;
     function forceWatchdogCheck() {
