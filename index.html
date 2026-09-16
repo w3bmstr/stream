@@ -1,117 +1,726 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Rate-Limit Safe P2P Stream</title>
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" crossorigin="anonymous"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Camera Stream — resilient</title>
+  <script src="peerjs.min.js"></script>
   <style>
-    body { font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 16px; display: flex; justify-content: center; }
-    .container { width: 100%; max-width: 640px; }
-    video { width: 100%; height: 360px; background: #000; border-radius: 8px; object-fit: cover; display: block; }
-    button { width: 100%; padding: 12px; margin: 12px 0; border-radius: 6px; border: none; background: #238636; color: #fff; font-weight: 600; cursor: pointer; }
-    #status { font-family: monospace; font-size: 13px; color: #3fb950; margin-top: 8px; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 1.2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.8rem; }
+    .card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 1.2rem;
+      width: 100%;
+      max-width: 520px;
+      margin-bottom: 1rem;
+    }
+    label { display: block; margin-bottom: 0.3rem; font-size: 0.9rem; color: #94a3b8; }
+    select, input {
+      width: 100%;
+      padding: 0.6rem;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background: #0f172a;
+      color: white;
+      font-size: 1rem;
+      margin-bottom: 0.8rem;
+    }
+    button {
+      width: 100%;
+      padding: 0.75rem;
+      border: none;
+      border-radius: 8px;
+      background: #3b82f6;
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 0.5rem;
+    }
+    button.secondary { background: #475569; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    video {
+      width: 100%;
+      max-width: 520px;
+      background: #000;
+      border-radius: 12px;
+      aspect-ratio: 16/9;
+      margin-top: 0.8rem;
+    }
+    #status {
+      margin-top: 0.8rem;
+      font-size: 0.9rem;
+      color: #94a3b8;
+      text-align: center;
+      min-height: 1.4em;
+    }
+    .error { color: #f87171; }
+    .success { color: #4ade80; }
+    .hint { font-size: 0.85rem; color: #64748b; margin-top: 0.6rem; line-height: 1.4; }
+    #debugLog {
+      background: #020617;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 0.6rem;
+      height: 220px;
+      overflow-y: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.75rem;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #debugLog .log-error { color: #f87171; }
+    #debugLog .log-warn { color: #fbbf24; }
+    #debugLog .log-info { color: #94a3b8; }
+    #debugLog .log-state { color: #38bdf8; }
+    #debugLog .log-time { color: #475569; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h2>Resilient P2P Stream</h2>
-    <button id="hostBtn">Start Host Camera</button>
-    <video id="videoPlayer" autoplay playsinline muted></video>
-    <div id="status">Status: Initializing...</div>
+  <h1>Live Camera Stream</h1>
+
+  <div class="card">
+    <label>Mode</label>
+    <select id="mode">
+      <option value="broadcast">Broadcast (Android phone)</option>
+      <option value="watch">Watch (anyone)</option>
+    </select>
+
+    <label>Stream ID</label>
+    <input id="streamId" type="text" value="mycam" placeholder="e.g. mycam" />
+
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" class="secondary" disabled>Stop</button>
+
+    <div class="hint">
+      <b>Phone:</b> Broadcast → Start<br>
+      <b>Other device:</b> Watch → same Stream ID → Start<br>
+      Auto-reconnect is aggressive. If it still drops across different networks, add TURN credentials in the script (search for TURN_PLACEHOLDER).
+    </div>
+  </div>
+
+  <video id="video" autoplay playsinline muted></video>
+  <div id="status">Ready</div>
+
+  <div class="card" style="max-width:520px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+      <label style="margin:0;">Debug log</label>
+      <button id="clearLogBtn" class="secondary" style="width:auto; padding:0.3rem 0.7rem; margin:0; font-size:0.8rem;">Clear</button>
+    </div>
+    <div id="debugLog"></div>
   </div>
 
   <script>
-    const ROOM_ID = 'live-stream-room-channel';
+    const modeSelect = document.getElementById('mode');
+    const streamIdInput = document.getElementById('streamId');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const video = document.getElementById('video');
+    const statusEl = document.getElementById('status');
+
     let peer = null;
     let localStream = null;
-    let retryDelay = 3000; // Initial delay: 3 seconds
-    const MAX_RETRY_DELAY = 30000; // Max delay: 30 seconds
+    let currentCall = null;
+    let dataConn = null;
+    let currentMode = null;
+    let currentId = null;
+    let retryTimeout = null;
+    let reconnectTimeout = null;
+    let connectTimeout = null;
+    let watchdogInterval = null;
+    let keepaliveInterval = null;
+    let manualStop = false;
+    let reconnecting = false;
+    let lastViewerId = null;       // broadcaster remembers last viewer to re-call
+    let reconnectAttempt = 0;
 
-    const rtcConfig = {
+    // ---------- ICE / TURN ----------
+    // STUN-only works on many home networks. Across strict NAT / mobile carriers
+    // you NEED TURN. Free static openrelay creds are dead — get free temporary
+    // ones from https://www.metered.ca/tools/openrelay (free account) or
+    // https://rstream.io/tools/turn-server and paste them under TURN_PLACEHOLDER.
+    const ICE_CONFIG = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' }
+        // TURN_PLACEHOLDER — uncomment and fill after you get credentials:
+        // ,{
+        //   urls: [
+        //     'turn:openrelay.metered.ca:80',
+        //     'turn:openrelay.metered.ca:443',
+        //     'turn:openrelay.metered.ca:443?transport=tcp'
+        //   ],
+        //   username: 'YOUR_USERNAME',
+        //   credential: 'YOUR_PASSWORD'
+        // }
+      ],
+      iceCandidatePoolSize: 10
     };
 
-    function setStatus(msg) { document.getElementById('status').textContent = `Status: ${msg}`; }
+    const RECONNECT_BASE_MS = 800;
+    const RECONNECT_MAX_MS = 4000;
+    const CONNECT_TIMEOUT_MS = 12000;
+    const WATCHDOG_MS = 1500;
 
-    function getDummyStream() {
-      const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = 2;
-      const ctx = canvas.getContext('2d');
-      ctx.fillRect(0, 0, 2, 2);
-      return canvas.captureStream(1);
+    function backoffMs() {
+      const ms = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(1.4, reconnectAttempt));
+      reconnectAttempt = Math.min(reconnectAttempt + 1, 8);
+      return ms;
     }
 
-    function initViewer() {
-      if (peer && !peer.destroyed) return;
-
-      peer = new Peer({ config: rtcConfig });
-
-      peer.on('open', () => {
-        retryDelay = 3000; // Reset delay on successful connection
-        setStatus('Searching for host broadcast...');
-        tryConnect();
-      });
-
-      peer.on('error', err => {
-        if (err.type === 'peer-unavailable') {
-          setStatus(`Host offline. Retrying in ${retryDelay / 1000}s...`);
-          setTimeout(tryConnect, retryDelay);
-          // Exponential backoff: Double delay up to 30s max
-          retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY);
-        } else if (err.type === 'unavailable-id') {
-          setStatus('ID locked. Close extra host tabs and wait 30s.');
-        } else {
-          setStatus(`Signaling Error (${err.type}). Pausing requests...`);
-        }
-      });
+    function resetBackoff() {
+      reconnectAttempt = 0;
     }
 
-    function tryConnect() {
-      if (!peer || peer.destroyed || peer.disconnected) return;
-      
-      const dummy = getDummyStream();
-      const call = peer.call(ROOM_ID, dummy);
+    function clearWatchdog() {
+      if (watchdogInterval) {
+        clearInterval(watchdogInterval);
+        watchdogInterval = null;
+      }
+      watchdogCheckFn = null;
+    }
 
-      if (call) {
-        call.on('stream', remoteStream => {
-          retryDelay = 3000;
-          setStatus('Live Stream Connected!');
-          const video = document.getElementById('videoPlayer');
-          video.srcObject = remoteStream;
-          video.play().catch(() => setStatus('Stream ready. Tap screen to play.'));
-        });
+    function clearKeepalive() {
+      if (keepaliveInterval) {
+        clearInterval(keepaliveInterval);
+        keepaliveInterval = null;
       }
     }
 
-    document.getElementById('hostBtn').addEventListener('click', async () => {
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        document.getElementById('videoPlayer').srcObject = localStream;
-
-        if (peer) {
-          peer.destroy();
-          peer = null;
+    function watchIceState(call, onBad) {
+      clearWatchdog();
+      const check = () => {
+        const pc = call && call.peerConnection;
+        if (!pc) return;
+        const ice = pc.iceConnectionState;
+        const conn = pc.connectionState;
+        if (
+          ice === 'disconnected' || ice === 'failed' || ice === 'closed' ||
+          conn === 'failed' || conn === 'closed'
+        ) {
+          clearWatchdog();
+          onBad(ice || conn);
         }
+      };
+      watchdogCheckFn = check;
+      watchdogInterval = setInterval(check, WATCHDOG_MS);
+    }
 
-        peer = new Peer(ROOM_ID, { config: rtcConfig });
+    function scheduleReconnect(id) {
+      if (manualStop || reconnecting) return;
+      reconnecting = true;
+      const delay = backoffMs();
+      logToPanel(`scheduleReconnect in ${Math.round(delay)}ms (attempt ${reconnectAttempt})`, 'log-warn');
+      reconnectTimeout = setTimeout(() => {
+        if (manualStop || currentMode !== 'watch') {
+          reconnecting = false;
+          return;
+        }
+        cleanup({ keepCamera: false });
+        startWatch(id);
+      }, delay);
+    }
 
-        peer.on('open', () => setStatus('Broadcasting live. Viewers auto-connect now.'));
+    function stopReconnect() {
+      reconnecting = false;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+    }
 
-        peer.on('call', call => {
-          setStatus('Viewer connected.');
-          call.answer(localStream);
-        });
-
-      } catch (err) {
-        setStatus(`Camera Error: ${err.message}`);
+    // Screen Wake Lock
+    let wakeLock = null;
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLock.addEventListener('release', () => { wakeLock = null; });
+          logToPanel('wake lock acquired', 'log-info');
+        }
+      } catch (e) {
+        console.warn('Wake lock unavailable:', e);
+      }
+    }
+    function releaseWakeLock() {
+      if (wakeLock) {
+        try { wakeLock.release(); } catch (e) {}
+        wakeLock = null;
+      }
+    }
+    document.addEventListener('visibilitychange', () => {
+      logToPanel(`document visibility = ${document.visibilityState}`, 'log-state');
+      if (document.visibilityState === 'visible') {
+        if (peer && !peer.destroyed) requestWakeLock();
+        forceWatchdogCheck();
+        // If we are supposed to be live, nudge a reconnect attempt
+        if (!manualStop && currentMode === 'watch' && !reconnecting) {
+          const pc = currentCall && currentCall.peerConnection;
+          if (pc && (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')) {
+            scheduleReconnect(currentId);
+          }
+        }
       }
     });
 
-    initViewer();
+    window.addEventListener('offline', () => logToPanel('window "offline" event — OS reports network is down', 'log-error'));
+    window.addEventListener('online', () => {
+      logToPanel('window "online" event — OS reports network is back', 'log-info');
+      if (!manualStop && currentMode) {
+        // Network came back — force a recovery pass
+        forceWatchdogCheck();
+        if (currentMode === 'watch') scheduleReconnect(currentId);
+        else if (currentMode === 'broadcast' && lastViewerId && peer && !peer.destroyed) {
+          setTimeout(() => answerViewer(lastViewerId), 500);
+        }
+      }
+    });
+    if (navigator.connection) {
+      navigator.connection.addEventListener('change', () => {
+        logToPanel(
+          `network connection changed: type=${navigator.connection.effectiveType || navigator.connection.type}, downlink=${navigator.connection.downlink}Mbps`,
+          'log-state'
+        );
+      });
+    }
+
+    let watchdogCheckFn = null;
+    function forceWatchdogCheck() {
+      if (watchdogCheckFn) watchdogCheckFn();
+    }
+
+    const debugLogEl = document.getElementById('debugLog');
+    document.getElementById('clearLogBtn').onclick = () => { debugLogEl.innerHTML = ''; };
+
+    function logToPanel(msg, cls = 'log-info') {
+      const time = new Date().toLocaleTimeString();
+      const line = document.createElement('div');
+      line.innerHTML = `<span class="log-time">[${time}]</span> <span class="${cls}">${
+        String(msg).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+      }</span>`;
+      debugLogEl.appendChild(line);
+      debugLogEl.scrollTop = debugLogEl.scrollHeight;
+    }
+
+    const _origError = console.error.bind(console);
+    const _origWarn = console.warn.bind(console);
+    console.error = (...args) => { _origError(...args); logToPanel(args.map(String).join(' '), 'log-error'); };
+    console.warn = (...args) => { _origWarn(...args); logToPanel(args.map(String).join(' '), 'log-warn'); };
+
+    window.addEventListener('error', (e) => {
+      logToPanel(`Uncaught error: ${e.message} (${e.filename}:${e.lineno})`, 'log-error');
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      logToPanel(`Unhandled promise rejection: ${e.reason}`, 'log-error');
+    });
+
+    function attachPCLogging(pc, label) {
+      if (!pc) {
+        logToPanel(`${label}: no RTCPeerConnection to attach to`, 'log-warn');
+        return;
+      }
+      logToPanel(`${label}: peer connection created`, 'log-state');
+      pc.addEventListener('iceconnectionstatechange', () => {
+        logToPanel(`${label}: iceConnectionState = ${pc.iceConnectionState}`, 'log-state');
+      });
+      pc.addEventListener('connectionstatechange', () => {
+        logToPanel(`${label}: connectionState = ${pc.connectionState}`, 'log-state');
+      });
+      pc.addEventListener('icegatheringstatechange', () => {
+        logToPanel(`${label}: iceGatheringState = ${pc.iceGatheringState}`, 'log-state');
+      });
+      pc.addEventListener('signalingstatechange', () => {
+        logToPanel(`${label}: signalingState = ${pc.signalingState}`, 'log-state');
+      });
+      pc.addEventListener('icecandidateerror', (e) => {
+        logToPanel(`${label}: ICE candidate error — ${e.errorText || e.errorCode} (${e.url || 'n/a'})`, 'log-error');
+      });
+    }
+
+    function setStatus(msg, type = '') {
+      statusEl.textContent = msg;
+      statusEl.className = type;
+    }
+
+    /**
+     * @param {{ keepCamera?: boolean }} opts
+     * keepCamera=true on broadcast so we don't kill getUserMedia during a re-call
+     */
+    function cleanup(opts = {}) {
+      const keepCamera = !!opts.keepCamera;
+      clearWatchdog();
+      clearKeepalive();
+      releaseWakeLock();
+      if (retryTimeout) { clearTimeout(retryTimeout); retryTimeout = null; }
+      if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
+      // reconnectTimeout intentionally NOT cleared here (same reason as before)
+
+      try {
+        if (currentCall) {
+          try { currentCall.close(); } catch (e) {}
+          currentCall = null;
+        }
+        if (dataConn) {
+          try { dataConn.close(); } catch (e) {}
+          dataConn = null;
+        }
+        if (peer) {
+          try { peer.destroy(); } catch (e) {}
+          peer = null;
+        }
+        if (localStream && !keepCamera) {
+          localStream.getTracks().forEach(t => t.stop());
+          localStream = null;
+          video.srcObject = null;
+        }
+      } catch (e) {
+        logToPanel(`cleanup() error: ${e.message}`, 'log-error');
+      }
+
+      if (!keepCamera) {
+        video.srcObject = null;
+      }
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    }
+
+    // ========== BROADCAST (phone) ==========
+    async function startBroadcast(id) {
+      try {
+        setStatus('Starting camera…');
+
+        if (!localStream) {
+          localStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              frameRate: { ideal: 24, max: 30 }
+            },
+            audio: false
+          });
+        }
+
+        video.srcObject = localStream;
+        video.muted = true;
+
+        currentMode = 'broadcast';
+        currentId = id;
+        manualStop = false;
+        reconnecting = false;
+        resetBackoff();
+        requestWakeLock();
+
+        peer = new Peer(id, {
+          debug: 2,
+          config: ICE_CONFIG
+        });
+
+        peer.on('open', (myId) => {
+          logToPanel(`peer open, broadcasting as "${myId}"`, 'log-info');
+          setStatus(`Broadcasting as "${myId}" — waiting for viewer`, 'success');
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+          // If we already knew a viewer from a previous session, re-call
+          if (lastViewerId) {
+            logToPanel(`re-calling previous viewer "${lastViewerId}"`, 'log-info');
+            setTimeout(() => answerViewer(lastViewerId), 400);
+          }
+        });
+
+        peer.on('connection', (conn) => {
+          logToPanel(`incoming data connection from "${conn.peer}"`, 'log-info');
+          dataConn = conn;
+          conn.on('data', (viewerId) => {
+            logToPanel(`viewer id received: "${viewerId}" — calling…`, 'log-info');
+            lastViewerId = viewerId;
+            setStatus('Viewer joined – sending camera…', 'success');
+            answerViewer(viewerId);
+          });
+          conn.on('error', (e) => logToPanel(`data connection error: ${e}`, 'log-error'));
+          conn.on('close', () => logToPanel('data connection closed', 'log-warn'));
+        });
+
+        peer.on('disconnected', () => {
+          if (manualStop) return;
+          logToPanel('peer disconnected from signaling server', 'log-warn');
+          setStatus('Lost signaling — reconnecting…', 'error');
+          try { peer.reconnect(); } catch (e) {
+            logToPanel(`peer.reconnect() threw: ${e.message}`, 'log-error');
+            // Full restart of broadcast peer (keep camera)
+            if (!manualStop) {
+              retryTimeout = setTimeout(() => {
+                if (manualStop || currentMode !== 'broadcast') return;
+                cleanup({ keepCamera: true });
+                startBroadcast(id);
+              }, backoffMs());
+            }
+          }
+        });
+
+        peer.on('error', (err) => {
+          console.error(err);
+          if (err.type === 'unavailable-id') {
+            setStatus('ID busy (stale session?) — retrying…', 'error');
+            if (peer) {
+              try { peer.destroy(); } catch (e) {}
+              peer = null;
+            }
+            if (!manualStop) {
+              retryTimeout = setTimeout(() => {
+                if (!manualStop && currentMode === 'broadcast') startBroadcast(id);
+              }, 2500);
+            }
+          } else if (
+            err.type === 'network' ||
+            err.type === 'server-error' ||
+            err.type === 'socket-error' ||
+            err.type === 'socket-closed'
+          ) {
+            setStatus('Connection problem — retrying…', 'error');
+            if (!manualStop) {
+              retryTimeout = setTimeout(() => {
+                if (!manualStop && currentMode === 'broadcast') {
+                  cleanup({ keepCamera: true });
+                  startBroadcast(id);
+                }
+              }, backoffMs());
+            }
+          } else {
+            setStatus('Error: ' + err.type, 'error');
+            // Don't full-cleanup camera on random errors; user can Stop
+          }
+        });
+
+      } catch (err) {
+        console.error(err);
+        setStatus('Camera error: ' + err.message, 'error');
+        cleanup();
+      }
+    }
+
+    function answerViewer(viewerId) {
+      if (!peer || peer.destroyed || !localStream) {
+        logToPanel('answerViewer: peer or stream missing', 'log-warn');
+        return;
+      }
+      reconnecting = false;
+      resetBackoff();
+      lastViewerId = viewerId;
+
+      // Close previous call if any
+      if (currentCall) {
+        try { currentCall.close(); } catch (e) {}
+        currentCall = null;
+      }
+
+      try {
+        currentCall = peer.call(viewerId, localStream);
+      } catch (e) {
+        logToPanel(`peer.call threw: ${e.message}`, 'log-error');
+        return;
+      }
+
+      if (!currentCall) {
+        logToPanel('peer.call returned null', 'log-error');
+        return;
+      }
+
+      attachPCLogging(currentCall.peerConnection, `call→${viewerId}`);
+      currentCall.on('error', (e) => logToPanel(`call error: ${e}`, 'log-error'));
+      currentCall.on('close', () => {
+        if (!reconnecting) {
+          logToPanel('call closed (viewer left or path died)', 'log-warn');
+          setStatus('Viewer left / path died — will re-call if they reconnect');
+        }
+      });
+
+      watchIceState(currentCall, (state) => {
+        reconnecting = true;
+        logToPanel(`ICE state "${state}" — re-calling viewer in a moment`, 'log-warn');
+        setStatus(`Connection ${state} — re-calling viewer…`, 'error');
+        const delay = backoffMs();
+        retryTimeout = setTimeout(() => {
+          if (manualStop || currentMode !== 'broadcast' || !peer || peer.destroyed) return;
+          answerViewer(viewerId);
+        }, delay);
+      });
+    }
+
+    // ========== WATCH ==========
+    function startWatch(id) {
+      setStatus('Connecting…');
+      logToPanel(`startWatch("${id}") attempt=${reconnectAttempt}`, 'log-info');
+      currentMode = 'watch';
+      currentId = id;
+      manualStop = false;
+      reconnecting = false;
+      requestWakeLock();
+
+      peer = new Peer({
+        debug: 2,
+        config: ICE_CONFIG
+      });
+
+      peer.on('open', (myId) => {
+        logToPanel(`peer open as "${myId}", connecting to broadcaster "${id}"`, 'log-info');
+        dataConn = peer.connect(id, { reliable: true });
+
+        dataConn.on('open', () => {
+          logToPanel('data connection open — sending my id to broadcaster', 'log-info');
+          dataConn.send(myId);
+          setStatus('Waiting for stream…');
+        });
+
+        dataConn.on('error', (e) => {
+          logToPanel(`data connection error: ${e}`, 'log-error');
+          setStatus('Could not reach broadcaster — retrying…', 'error');
+          scheduleReconnect(id);
+        });
+
+        dataConn.on('close', () => {
+          logToPanel('data connection closed', 'log-warn');
+          if (!manualStop && !reconnecting) scheduleReconnect(id);
+        });
+      });
+
+      peer.on('call', (call) => {
+        logToPanel('incoming call from broadcaster', 'log-info');
+        currentCall = call;
+        call.answer(); // receive only
+        attachPCLogging(call.peerConnection, 'watch-call');
+        call.on('error', (e) => logToPanel(`call error: ${e}`, 'log-error'));
+
+        if (connectTimeout) clearTimeout(connectTimeout);
+        connectTimeout = setTimeout(() => {
+          if (manualStop || currentMode !== 'watch') return;
+          const pc = call.peerConnection;
+          logToPanel(
+            `connect timeout (${CONNECT_TIMEOUT_MS / 1000}s) — ice=${pc && pc.iceConnectionState}, gather=${pc && pc.iceGatheringState}`,
+            'log-error'
+          );
+          setStatus('Connection timed out — retrying…', 'error');
+          scheduleReconnect(id);
+        }, CONNECT_TIMEOUT_MS);
+
+        call.on('stream', (remoteStream) => {
+          logToPanel('stream received', 'log-info');
+          if (connectTimeout) {
+            clearTimeout(connectTimeout);
+            connectTimeout = null;
+          }
+          resetBackoff();
+          video.srcObject = remoteStream;
+          video.muted = false;
+          // Some browsers need an explicit play() after a reconnect
+          video.play().catch(() => {});
+          setStatus('Connected – watching live', 'success');
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+
+          watchIceState(call, (state) => {
+            logToPanel(`ICE state "${state}" — reconnecting`, 'log-warn');
+            setStatus(`Connection ${state} — reconnecting…`, 'error');
+            scheduleReconnect(id);
+          });
+        });
+
+        call.on('close', () => {
+          if (reconnecting) return;
+          logToPanel('call closed (stream ended)', 'log-warn');
+          setStatus('Stream ended — reconnecting…', 'error');
+          scheduleReconnect(id);
+        });
+      });
+
+      peer.on('disconnected', () => {
+        if (manualStop) return;
+        logToPanel('peer disconnected from signaling server', 'log-warn');
+        setStatus('Lost signaling — reconnecting…', 'error');
+        try {
+          peer.reconnect();
+        } catch (e) {
+          logToPanel(`peer.reconnect() threw: ${e.message}`, 'log-error');
+          scheduleReconnect(id);
+        }
+      });
+
+      peer.on('error', (err) => {
+        console.error(err);
+        if (err.type === 'peer-unavailable') {
+          setStatus('Stream not found. Is the phone broadcasting? Retrying…', 'error');
+          scheduleReconnect(id);
+        } else if (
+          err.type === 'network' ||
+          err.type === 'server-error' ||
+          err.type === 'socket-error' ||
+          err.type === 'socket-closed'
+        ) {
+          setStatus('Connection problem — retrying…', 'error');
+          if (peer) {
+            try { peer.destroy(); } catch (e) {}
+            peer = null;
+          }
+          if (!manualStop) {
+            retryTimeout = setTimeout(() => {
+              if (!manualStop && currentMode === 'watch') startWatch(id);
+            }, backoffMs());
+          }
+        } else {
+          setStatus('Error: ' + err.type + ' — retrying…', 'error');
+          scheduleReconnect(id);
+        }
+      });
+    }
+
+    // ========== BUTTONS ==========
+    startBtn.onclick = () => {
+      const id = streamIdInput.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (!id) {
+        setStatus('Please enter a Stream ID', 'error');
+        return;
+      }
+      streamIdInput.value = id;
+
+      manualStop = true;
+      stopReconnect();
+      cleanup(); // full clean previous session
+      resetBackoff();
+      lastViewerId = null;
+
+      if (modeSelect.value === 'broadcast') {
+        startBroadcast(id);
+      } else {
+        startWatch(id);
+      }
+    };
+
+    stopBtn.onclick = () => {
+      manualStop = true;
+      currentMode = null;
+      lastViewerId = null;
+      stopReconnect();
+      cleanup();
+      setStatus('Stopped');
+    };
+
+    window.addEventListener('beforeunload', () => cleanup());
   </script>
 </body>
 </html>
