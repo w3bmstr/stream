@@ -3,32 +3,40 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Custom WebRTC Stream</title>
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <title>GitHub Pages Live Stream</title>
+  <!-- Inline favicon fixes 404 console error -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎥</text></svg>">
+  <!-- crossorigin="anonymous" prevents tracking prevention storage warnings -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" crossorigin="anonymous"></script>
   <style>
-    body { font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 16px; }
-    .container { max-width: 600px; margin: 0 auto; }
-    video { width: 100%; height: 300px; background: #000; border-radius: 8px; object-fit: cover; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 16px; display: flex; justify-content: center; }
+    .container { width: 100%; max-width: 640px; }
+    video { width: 100%; height: 360px; background: #000; border-radius: 8px; object-fit: cover; display: block; }
     .controls { display: flex; gap: 8px; margin: 12px 0; }
-    input, button { padding: 10px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #fff; }
+    input, button { padding: 10px 14px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #fff; font-size: 14px; }
     input { flex: 1; }
     button { cursor: pointer; background: #238636; border: none; font-weight: 600; }
+    #shareContainer { display: none; background: #161b22; padding: 12px; border-radius: 6px; border: 1px solid #30363d; margin-bottom: 12px; word-break: break-all; }
     #status { font-family: monospace; font-size: 13px; color: #3fb950; margin-top: 8px; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>Native WebRTC P2P Stream</h2>
+    <h2>P2P Video Stream</h2>
     
-    <div class="controls">
+    <div id="controls" class="controls">
       <input type="text" id="targetId" placeholder="Host Peer ID">
       <button id="hostBtn">Start Host</button>
       <button id="joinBtn">Join Stream</button>
     </div>
 
-    <p>Your ID: <strong id="myId">Initializing...</strong></p>
+    <div id="shareContainer">
+      <span>Direct Viewer Link: </span><a id="shareLink" href="#" target="_blank" style="color: #58a6ff;"></a>
+    </div>
+
+    <p id="idContainer">Your ID: <strong id="myId">Initializing...</strong></p>
     <video id="videoPlayer" autoplay playsinline muted></video>
-    <div id="status">Status: Idle</div>
+    <div id="status">Status: Initializing...</div>
   </div>
 
   <script>
@@ -39,7 +47,6 @@
 
     function setStatus(msg) { statusEl.textContent = `Status: ${msg}`; }
 
-    // Generates a lightweight animated stream required by PeerJS constructor
     function createDummyStream() {
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 10;
@@ -56,24 +63,27 @@
         config: {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelay', credential: 'openrelay' },
-            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelay', credential: 'openrelay' },
-            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelay', credential: 'openrelay' }
+            { urls: 'stun:stun1.l.google.com:19302' },
+            // Corrected TURN relay credentials for OpenRelay project
+            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
           ]
         }
       });
 
       peer.on('open', id => {
         document.getElementById('myId').textContent = id;
-        setStatus('Ready to connect');
+        setStatus('Ready');
+        checkAutoConnect();
       });
 
       peer.on('disconnected', () => peer.reconnect());
 
       peer.on('call', call => {
-        setStatus('Viewer connected');
+        setStatus('Viewer connected. Streaming live...');
         call.answer(localStream);
-        setTimeout(() => bindIceAutoHealing(call.peerConnection), 500);
+        bindIceAutoHealing(call.peerConnection);
       });
     }
 
@@ -81,51 +91,65 @@
       if (!pc) return;
       pc.oniceconnectionstatechange = () => {
         setStatus(`ICE State: ${pc.iceConnectionState}`);
-        if (pc.iceConnectionState === 'disconnected') {
-          setStatus('Network blip detected. Self-healing connection...');
+        if (pc.iceConnectionState === 'failed') {
+          setStatus('ICE Connection failed. Restarting ICE...');
           if (typeof pc.restartIce === 'function') pc.restartIce();
         }
       };
     }
 
-    // Host Mode
+    function checkAutoConnect() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const hostId = urlParams.get('host');
+      if (hostId) {
+        document.getElementById('controls').style.display = 'none';
+        document.getElementById('idContainer').style.display = 'none';
+        connectToHost(hostId);
+      }
+    }
+
+    function connectToHost(hostId) {
+      if (!peer || !peer.open) return setStatus('Peer connection not ready.');
+
+      setStatus(`Connecting to host (${hostId})...`);
+      const dummyStream = createDummyStream();
+      const call = peer.call(hostId, dummyStream);
+
+      if (!call) return setStatus('Failed to initiate connection.');
+
+      call.on('stream', remoteStream => {
+        setStatus('Live Stream Connected');
+        videoEl.srcObject = remoteStream;
+        videoEl.play().catch(() => setStatus('Tap video player to play stream'));
+      });
+
+      bindIceAutoHealing(call.peerConnection);
+    }
+
     document.getElementById('hostBtn').addEventListener('click', async () => {
       try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         videoEl.srcObject = localStream;
-        setStatus('Broadcasting active camera feed...');
+        
+        const myId = document.getElementById('myId').textContent;
+        const shareUrl = `${window.location.origin}${window.location.pathname}?host=${myId}`;
+        
+        const shareContainer = document.getElementById('shareContainer');
+        const shareLink = document.getElementById('shareLink');
+        shareLink.href = shareUrl;
+        shareLink.textContent = shareUrl;
+        shareContainer.style.display = 'block';
+
+        setStatus('Broadcasting camera feed.');
       } catch (err) {
         setStatus(`Camera error: ${err.message}`);
       }
     });
 
-    // Viewer Mode
     document.getElementById('joinBtn').addEventListener('click', () => {
       const hostId = document.getElementById('targetId').value.trim();
       if (!hostId) return alert('Enter Host ID');
-
-      // 1. Guard against calling before PeerJS signaling is ready
-      if (!peer || !peer.open) {
-        return setStatus('Peer connection not ready yet. Wait a moment and try again.');
-      }
-
-      setStatus(`Connecting to host: ${hostId}...`);
-      
-      // 2. Pass dummy stream to prevent PeerJS from returning undefined
-      const dummyStream = createDummyStream();
-      const call = peer.call(hostId, dummyStream);
-
-      if (!call) {
-        return setStatus('Failed to initiate call connection.');
-      }
-
-      call.on('stream', remoteStream => {
-        setStatus('Stream connected and rendering');
-        videoEl.srcObject = remoteStream;
-        videoEl.play().catch(() => setStatus('Tap screen to play video'));
-      });
-
-      setTimeout(() => bindIceAutoHealing(call.peerConnection), 500);
+      connectToHost(hostId);
     });
 
     initPeer();
