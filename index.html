@@ -3,258 +3,110 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Resilient PeerJS WebRTC Stream</title>
+  <title>Custom WebRTC Stream</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
-    body { font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 24px; }
-    .container { max-width: 800px; margin: 0 auto; }
-    .video-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
-    video { width: 100%; height: 260px; background: #000; border-radius: 8px; object-fit: cover; }
-    .controls { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
-    button, input { padding: 10px 14px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #fff; }
+    body { font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 16px; }
+    .container { max-width: 600px; margin: 0 auto; }
+    video { width: 100%; height: 300px; background: #000; border-radius: 8px; object-fit: cover; }
+    .controls { display: flex; gap: 8px; margin: 12px 0; }
+    input, button { padding: 10px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #fff; }
+    input { flex: 1; }
     button { cursor: pointer; background: #238636; border: none; font-weight: 600; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    #unmuteBtn { background: #1f6beb; }
-    #logPanel { background: #010409; border: 1px solid #30363d; padding: 12px; border-radius: 6px; height: 180px; overflow-y: auto; font-family: monospace; font-size: 13px; margin-top: 16px; }
-    .log-state { color: #3fb950; }
-    .log-warn { color: #d29922; }
-    .log-err { color: #f85149; }
+    #status { font-family: monospace; font-size: 13px; color: #3fb950; margin-top: 8px; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>PeerJS Video Stream (Self-Healing)</h2>
+    <h2>Native WebRTC P2P Stream</h2>
     
     <div class="controls">
-      <input type="text" id="peerIdInput" placeholder="Broadcaster Peer ID">
-      <button id="startBroadcasterBtn">Start Broadcaster</button>
-      <button id="startViewerBtn">Connect as Viewer</button>
-      <button id="unmuteBtn">Unmute Audio</button>
-    </div>
-    
-    <p>My Peer ID: <strong id="myPeerId">Initializing...</strong></p>
-
-    <div class="video-grid">
-      <div>
-        <label>Remote Stream</label>
-        <video id="remoteVideo" autoplay playsinline muted></video>
-      </div>
-      <div>
-        <label>Local Stream</label>
-        <video id="localVideo" autoplay playsinline muted></video>
-      </div>
+      <input type="text" id="targetId" placeholder="Host Peer ID">
+      <button id="hostBtn">Start Host</button>
+      <button id="joinBtn">Join Stream</button>
     </div>
 
-    <div id="logPanel"></div>
+    <p>Your ID: <strong id="myId">Initializing...</strong></p>
+    <video id="videoPlayer" autoplay playsinline muted></video>
+    <div id="status">Status: Idle</div>
   </div>
 
   <script>
     let peer = null;
-    let activeCall = null;
     let localStream = null;
-    let watchdogInterval = null;
-    let iceFailureTimer = null;
-    let isBroadcaster = false;
+    const statusEl = document.getElementById('status');
+    const videoEl = document.getElementById('videoPlayer');
 
-    const logPanel = document.getElementById('logPanel');
-    const myPeerIdEl = document.getElementById('myPeerId');
-    const remoteVideo = document.getElementById('remoteVideo');
-    const localVideo = document.getElementById('localVideo');
-
-    function logToPanel(msg, type = '') {
-      const div = document.createElement('div');
-      if (type) div.className = type;
-      div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-      logPanel.appendChild(div);
-      logPanel.scrollTop = logPanel.scrollHeight;
-    }
-
-    // Creates an active synthetic stream to ensure continuous WebRTC packet flow
-    function createDummyStream() {
-      const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = 10;
-      const ctx = canvas.getContext('2d');
-      
-      // Active 10fps animation loop forces outbound RTP packets, stopping RFC 7675 timeouts
-      setInterval(() => {
-        ctx.fillStyle = ctx.fillStyle === '#000000' ? '#ffffff' : '#000000';
-        ctx.fillRect(0, 0, 10, 10);
-      }, 100);
-
-      const stream = canvas.captureStream(10);
-
-      try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const dst = audioCtx.createMediaStreamDestination();
-        osc.connect(dst);
-        osc.start();
-        const audioTrack = dst.stream.getAudioTracks()[0];
-        audioTrack.enabled = false;
-        stream.addTrack(audioTrack);
-      } catch (e) {
-        logToPanel('Audio track fallback: ' + e.message, 'log-warn');
-      }
-
-      return stream;
-    }
+    function setStatus(msg) { statusEl.textContent = `Status: ${msg}`; }
 
     function initPeer() {
       peer = new Peer({
         config: {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
+            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelay', credential: 'openrelay' },
+            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelay', credential: 'openrelay' },
+            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelay', credential: 'openrelay' }
           ]
         }
       });
 
-      peer.on('open', (id) => {
-        myPeerIdEl.textContent = id;
-        logToPanel(`Peer initialized with ID: ${id}`, 'log-state');
-      });
+      peer.on('open', id => document.getElementById('myId').textContent = id);
+      peer.on('disconnected', () => peer.reconnect());
 
-      peer.on('disconnected', () => {
-        logToPanel('Signaling socket disconnected. Reconnecting signaling...', 'log-warn');
-        peer.reconnect();
-      });
-
-      peer.on('error', (err) => {
-        logToPanel(`Peer Error (${err.type}): ${err.message}`, 'log-err');
-      });
-
-      peer.on('call', (incomingCall) => {
-        logToPanel('Incoming call received...', 'log-state');
-        if (isBroadcaster && localStream) {
-          activeCall = incomingCall;
-          activeCall.answer(localStream);
-          setupCallListeners(activeCall);
-        } else {
-          logToPanel('Received call while not in broadcaster mode.', 'log-warn');
-        }
+      // Host receives connection request from viewer
+      peer.on('call', call => {
+        setStatus('Viewer connected');
+        call.answer(localStream);
+        bindIceAutoHealing(call.peerConnection);
       });
     }
 
-    function clearWatchdog() {
-      if (watchdogInterval) {
-        clearInterval(watchdogInterval);
-        watchdogInterval = null;
-      }
-      if (iceFailureTimer) {
-        clearTimeout(iceFailureTimer);
-        iceFailureTimer = null;
-      }
-    }
-
-    function watchIceState(call, onBad) {
-      clearWatchdog();
-
-      const check = () => {
-        const pc = call && call.peerConnection;
-        if (!pc) return;
-
-        const iceState = pc.iceConnectionState;
-        const connState = pc.connectionState;
-
-        if (iceState === 'connected' || iceState === 'completed' || connState === 'connected') {
-          if (iceFailureTimer) {
-            clearTimeout(iceFailureTimer);
-            iceFailureTimer = null;
-            logToPanel('ICE state recovered to connected.', 'log-state');
-          }
-          return;
-        }
-
-        if (iceState === 'failed' || iceState === 'closed') {
-          clearWatchdog();
-          onBad(iceState);
-        } 
-        else if (iceState === 'disconnected') {
-          if (!iceFailureTimer) {
-            logToPanel('ICE disconnected — waiting 5s grace period...', 'log-warn');
-            iceFailureTimer = setTimeout(() => {
-              iceFailureTimer = null;
-              const currentIce = call && call.peerConnection && call.peerConnection.iceConnectionState;
-              if (currentIce === 'disconnected' || currentIce === 'failed') {
-                clearWatchdog();
-                onBad(currentIce);
-              }
-            }, 5000);
-          }
+    // Handles network blips natively using RTCPeerConnection API
+    function bindIceAutoHealing(pc) {
+      if (!pc) return;
+      pc.oniceconnectionstatechange = () => {
+        setStatus(`ICE State: ${pc.iceConnectionState}`);
+        if (pc.iceConnectionState === 'disconnected') {
+          setStatus('Network blip detected. Self-healing connection...');
+          if (typeof pc.restartIce === 'function') pc.restartIce();
         }
       };
-
-      watchdogInterval = setInterval(check, 1000);
     }
 
-    function setupCallListeners(call) {
-      call.on('stream', (remoteStream) => {
-        // Stop secondary track events from resetting the video pipeline
-        if (remoteVideo.srcObject === remoteStream) return;
-
-        logToPanel('Received remote stream track.', 'log-state');
-        remoteVideo.srcObject = remoteStream;
-        remoteVideo.muted = true;
-        remoteVideo.play()
-          .then(() => logToPanel('Remote video playing successfully.', 'log-state'))
-          .catch(err => logToPanel(`Autoplay note: ${err.message}. Click Unmute.`, 'log-warn'));
-      });
-
-      call.on('close', () => {
-        logToPanel('Call closed.', 'log-warn');
-        clearWatchdog();
-      });
-
-      call.on('error', (err) => {
-        logToPanel(`Call Error: ${err}`, 'log-err');
-      });
-
-      watchIceState(call, (failedState) => {
-        logToPanel(`ICE connection lost (${failedState}).`, 'log-err');
-        call.close();
-        
-        if (!isBroadcaster) {
-          logToPanel('Viewer initiating reconnection in 3s...', 'log-warn');
-          setTimeout(() => {
-            const targetId = document.getElementById('peerIdInput').value.trim();
-            if (targetId) connectAsViewer(targetId);
-          }, 3000);
-        }
-      });
-    }
-
-    async function startBroadcaster() {
-      isBroadcaster = true;
+    // Host Mode (Camera Publisher)
+    document.getElementById('hostBtn').addEventListener('click', async () => {
       try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localVideo.srcObject = localStream;
-        logToPanel('Broadcaster media ready. Waiting for connection...', 'log-state');
+        videoEl.srcObject = localStream;
+        setStatus('Broadcasting active camera feed...');
       } catch (err) {
-        logToPanel(`Camera/Mic Error: ${err.message}`, 'log-err');
+        setStatus(`Camera error: ${err.message}`);
       }
-    }
-
-    function connectAsViewer(targetId) {
-      if (!targetId) {
-        alert('Please enter a target Peer ID');
-        return;
-      }
-      isBroadcaster = false;
-      logToPanel(`Calling broadcaster (${targetId}) with animated dummy stream...`, 'log-state');
-      
-      const dummyStream = createDummyStream();
-      activeCall = peer.call(targetId, dummyStream);
-      setupCallListeners(activeCall);
-    }
-
-    document.getElementById('startBroadcasterBtn').addEventListener('click', startBroadcaster);
-    document.getElementById('startViewerBtn').addEventListener('click', () => {
-      connectAsViewer(document.getElementById('peerIdInput').value.trim());
     });
-    document.getElementById('unmuteBtn').addEventListener('click', () => {
-      remoteVideo.muted = false;
-      remoteVideo.play().catch(e => logToPanel(`Play error: ${e.message}`, 'log-err'));
-      logToPanel('Unmuted remote video.', 'log-state');
+
+    // Viewer Mode (Native Receive-Only Setup)
+    document.getElementById('joinBtn').addEventListener('click', () => {
+      const hostId = document.getElementById('targetId').value.trim();
+      if (!hostId) return alert('Enter Host ID');
+
+      setStatus(`Connecting to host: ${hostId}...`);
+      
+      // Pass null media stream to let transceivers handle reception
+      const call = peer.call(hostId, null);
+
+      call.on('peerConnection', pc => {
+        // Native transceivers instruct browser to listen for video/audio streams
+        pc.addTransceiver('video', { direction: 'recvonly' });
+        pc.addTransceiver('audio', { direction: 'recvonly' });
+        bindIceAutoHealing(pc);
+      });
+
+      call.on('stream', remoteStream => {
+        setStatus('Stream connected and rendering');
+        videoEl.srcObject = remoteStream;
+        videoEl.play().catch(() => setStatus('Tap screen to play video'));
+      });
     });
 
     initPeer();
