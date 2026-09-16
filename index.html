@@ -3,50 +3,44 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GitHub Pages Live Stream</title>
-  <!-- Inline favicon fixes 404 console error -->
+  <title>Auto-Connect Live Stream</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎥</text></svg>">
-  <!-- crossorigin="anonymous" prevents tracking prevention storage warnings -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" crossorigin="anonymous"></script>
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 16px; display: flex; justify-content: center; }
     .container { width: 100%; max-width: 640px; }
     video { width: 100%; height: 360px; background: #000; border-radius: 8px; object-fit: cover; display: block; }
     .controls { display: flex; gap: 8px; margin: 12px 0; }
-    input, button { padding: 10px 14px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #fff; font-size: 14px; }
-    input { flex: 1; }
-    button { cursor: pointer; background: #238636; border: none; font-weight: 600; }
-    #shareContainer { display: none; background: #161b22; padding: 12px; border-radius: 6px; border: 1px solid #30363d; margin-bottom: 12px; word-break: break-all; }
+    button { flex: 1; padding: 12px; border-radius: 6px; border: none; background: #238636; color: #fff; font-weight: 600; cursor: pointer; font-size: 15px; }
     #status { font-family: monospace; font-size: 13px; color: #3fb950; margin-top: 8px; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>P2P Video Stream</h2>
+    <h2>Auto-Connect Stream</h2>
     
-    <div id="controls" class="controls">
-      <input type="text" id="targetId" placeholder="Host Peer ID">
-      <button id="hostBtn">Start Host</button>
-      <button id="joinBtn">Join Stream</button>
+    <div class="controls">
+      <button id="hostBtn">Start Broadcasting (Host)</button>
     </div>
 
-    <div id="shareContainer">
-      <span>Direct Viewer Link: </span><a id="shareLink" href="#" target="_blank" style="color: #58a6ff;"></a>
-    </div>
-
-    <p id="idContainer">Your ID: <strong id="myId">Initializing...</strong></p>
     <video id="videoPlayer" autoplay playsinline muted></video>
-    <div id="status">Status: Initializing...</div>
+    <div id="status">Status: Searching for stream...</div>
   </div>
 
   <script>
+    // Fixed channel ID so any viewer joining the page connects automatically
+    const STREAM_ROOM_ID = 'live-stream-room-channel';
     let peer = null;
     let localStream = null;
+    let reconnectTimer = null;
+    let activeCall = null;
+
     const statusEl = document.getElementById('status');
     const videoEl = document.getElementById('videoPlayer');
 
     function setStatus(msg) { statusEl.textContent = `Status: ${msg}`; }
 
+    // Generates active dummy stream for PeerJS handshake initialization
     function createDummyStream() {
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 10;
@@ -58,13 +52,13 @@
       return canvas.captureStream(10);
     }
 
-    function initPeer() {
+    // Default Viewer Mode: Runs automatically on page load
+    function initViewer() {
       peer = new Peer({
         config: {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
-            // Corrected TURN relay credentials for OpenRelay project
             { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
@@ -72,87 +66,104 @@
         }
       });
 
-      peer.on('open', id => {
-        document.getElementById('myId').textContent = id;
-        setStatus('Ready');
-        checkAutoConnect();
+      peer.on('open', () => {
+        setStatus('Searching for active stream...');
+        connectToHost();
       });
 
       peer.on('disconnected', () => peer.reconnect());
-
-      peer.on('call', call => {
-        setStatus('Viewer connected. Streaming live...');
-        call.answer(localStream);
-        bindIceAutoHealing(call.peerConnection);
+      
+      peer.on('error', err => {
+        if (err.type === 'peer-unavailable') {
+          setStatus('Host offline. Retrying connection in 3s...');
+          scheduleReconnect();
+        }
       });
     }
 
-    function bindIceAutoHealing(pc) {
-      if (!pc) return;
-      pc.oniceconnectionstatechange = () => {
-        setStatus(`ICE State: ${pc.iceConnectionState}`);
-        if (pc.iceConnectionState === 'failed') {
-          setStatus('ICE Connection failed. Restarting ICE...');
-          if (typeof pc.restartIce === 'function') pc.restartIce();
-        }
-      };
-    }
+    function connectToHost() {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
 
-    function checkAutoConnect() {
-      const urlParams = new URLSearchParams(window.location.search);
-      const hostId = urlParams.get('host');
-      if (hostId) {
-        document.getElementById('controls').style.display = 'none';
-        document.getElementById('idContainer').style.display = 'none';
-        connectToHost(hostId);
+      const dummyStream = createDummyStream();
+      activeCall = peer.call(STREAM_ROOM_ID, dummyStream);
+
+      if (!activeCall) {
+        scheduleReconnect();
+        return;
+      }
+
+      activeCall.on('stream', remoteStream => {
+        setStatus('Live Stream Connected');
+        videoEl.srcObject = remoteStream;
+        videoEl.play().catch(() => setStatus('Tap screen to play video'));
+      });
+
+      activeCall.on('close', () => {
+        setStatus('Stream connection closed. Rejoining...');
+        scheduleReconnect();
+      });
+
+      activeCall.on('error', () => scheduleReconnect());
+
+      // Auto-reconnect instantly if cellular network blips
+      if (activeCall.peerConnection) {
+        activeCall.peerConnection.oniceconnectionstatechange = () => {
+          const state = activeCall.peerConnection.iceConnectionState;
+          if (state === 'failed' || state === 'disconnected') {
+            setStatus('Network drop detected. Re-establishing stream...');
+            activeCall.close();
+            scheduleReconnect();
+          }
+        };
       }
     }
 
-    function connectToHost(hostId) {
-      if (!peer || !peer.open) return setStatus('Peer connection not ready.');
-
-      setStatus(`Connecting to host (${hostId})...`);
-      const dummyStream = createDummyStream();
-      const call = peer.call(hostId, dummyStream);
-
-      if (!call) return setStatus('Failed to initiate connection.');
-
-      call.on('stream', remoteStream => {
-        setStatus('Live Stream Connected');
-        videoEl.srcObject = remoteStream;
-        videoEl.play().catch(() => setStatus('Tap video player to play stream'));
-      });
-
-      bindIceAutoHealing(call.peerConnection);
+    function scheduleReconnect() {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => connectToHost(), 3000);
     }
 
+    // Host Mode Setup
     document.getElementById('hostBtn').addEventListener('click', async () => {
       try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         videoEl.srcObject = localStream;
-        
-        const myId = document.getElementById('myId').textContent;
-        const shareUrl = `${window.location.origin}${window.location.pathname}?host=${myId}`;
-        
-        const shareContainer = document.getElementById('shareContainer');
-        const shareLink = document.getElementById('shareLink');
-        shareLink.href = shareUrl;
-        shareLink.textContent = shareUrl;
-        shareContainer.style.display = 'block';
 
-        setStatus('Broadcasting camera feed.');
+        // Destroy viewer instance and re-register under fixed STREAM_ROOM_ID
+        if (peer) peer.destroy();
+
+        peer = new Peer(STREAM_ROOM_ID, {
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+              { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+            ]
+          }
+        });
+
+        peer.on('open', () => {
+          setStatus('Broadcasting! Viewers will auto-connect upon opening the page.');
+        });
+
+        peer.on('call', call => {
+          setStatus('Viewer connected.');
+          call.answer(localStream);
+        });
+
+        peer.on('error', err => {
+          if (err.type === 'unavailable-id') {
+            setStatus('Broadcaster is already running on another device.');
+          }
+        });
+
       } catch (err) {
         setStatus(`Camera error: ${err.message}`);
       }
     });
 
-    document.getElementById('joinBtn').addEventListener('click', () => {
-      const hostId = document.getElementById('targetId').value.trim();
-      if (!hostId) return alert('Enter Host ID');
-      connectToHost(hostId);
-    });
-
-    initPeer();
+    // Automatically initialize as viewer on load
+    initViewer();
   </script>
 </body>
 </html>
