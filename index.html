@@ -1,605 +1,3162 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Live Camera Stream</title>
-  <script src="peerjs.min.js"></script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
-      min-height: 100vh;
-      padding: 1.2rem;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-    h1 { font-size: 1.5rem; margin-bottom: 0.8rem; }
-    .card {
-      background: #1e293b;
-      border-radius: 12px;
-      padding: 1.2rem;
-      width: 100%;
-      max-width: 520px;
-      margin-bottom: 1rem;
-    }
-    label { display: block; margin-bottom: 0.3rem; font-size: 0.9rem; color: #94a3b8; }
-    select, input {
-      width: 100%;
-      padding: 0.6rem;
-      border-radius: 8px;
-      border: 1px solid #334155;
-      background: #0f172a;
-      color: white;
-      font-size: 1rem;
-      margin-bottom: 0.8rem;
-    }
-    button {
-      width: 100%;
-      padding: 0.75rem;
-      border: none;
-      border-radius: 8px;
-      background: #3b82f6;
-      color: white;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      margin-bottom: 0.5rem;
-    }
-    button.secondary { background: #475569; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    video {
-      width: 100%;
-      max-width: 520px;
-      background: #000;
-      border-radius: 12px;
-      aspect-ratio: 16/9;
-      margin-top: 0.8rem;
-    }
-    #status {
-      margin-top: 0.8rem;
-      font-size: 0.9rem;
-      color: #94a3b8;
-      text-align: center;
-      min-height: 1.4em;
-    }
-    .error { color: #f87171; }
-    .success { color: #4ade80; }
-    .hint { font-size: 0.85rem; color: #64748b; margin-top: 0.6rem; line-height: 1.4; }
-    #debugLog {
-      background: #020617;
-      border: 1px solid #334155;
-      border-radius: 8px;
-      padding: 0.6rem;
-      height: 220px;
-      overflow-y: auto;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.75rem;
-      line-height: 1.4;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    #debugLog .log-error { color: #f87171; }
-    #debugLog .log-warn { color: #fbbf24; }
-    #debugLog .log-info { color: #94a3b8; }
-    #debugLog .log-state { color: #38bdf8; }
-    #debugLog .log-time { color: #475569; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Church AV Suite</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b1020;
+    --panel: rgba(14, 20, 38, 0.88);
+    --panel-2: rgba(21, 30, 54, 0.92);
+    --text: #eef3ff;
+    --muted: #aab6d6;
+    --accent: #52d2a7;
+    --accent-2: #7cc4ff;
+    --danger: #ff6b6b;
+    --amber: #ffcf7a;
+    --line: rgba(255,255,255,0.08);
+    --shadow: 0 24px 80px rgba(0,0,0,0.4);
+    --radius: 20px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background:
+      radial-gradient(circle at top left, rgba(82, 210, 167, 0.18), transparent 28%),
+      radial-gradient(circle at top right, rgba(124, 196, 255, 0.16), transparent 24%),
+      linear-gradient(180deg, #08101f 0%, #09101c 45%, #060b14 100%);
+    color: var(--text);
+  }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 28px; }
+  .hero { display: grid; grid-template-columns: 1.35fr 0.95fr; gap: 20px; align-items: stretch; margin-bottom: 20px; }
+  .card { background: linear-gradient(180deg, var(--panel), rgba(11,16,32,0.92)); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); backdrop-filter: blur(16px); }
+  .masthead { padding: 28px; position: relative; overflow: hidden; }
+  .masthead::after { content: ""; position: absolute; inset: auto -18% -30% auto; width: 260px; height: 260px; border-radius: 50%; background: radial-gradient(circle, rgba(82,210,167,0.22), transparent 70%); pointer-events: none; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 999px; background: rgba(82, 210, 167, 0.12); color: var(--accent); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 18px; }
+  h1 { margin: 0 0 10px; font-size: clamp(1.7rem, 3.4vw, 2.9rem); line-height: 1.05; letter-spacing: -0.04em; }
+  .lede { max-width: 68ch; margin: 0 0 18px; color: var(--muted); font-size: 0.98rem; line-height: 1.6; }
+  .notice { font-size: 0.85rem; color: var(--amber); background: rgba(255,207,122,0.08); border: 1px solid rgba(255,207,122,0.25); padding: 10px 14px; border-radius: 12px; margin-bottom: 18px; line-height: 1.5; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+  button { appearance: none; border: 0; border-radius: 14px; padding: 11px 15px; font: inherit; font-weight: 700; cursor: pointer; transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease; font-size: 0.92rem; }
+  button:hover { transform: translateY(-1px); }
+  button:active { transform: translateY(0); }
+  .primary { background: linear-gradient(135deg, var(--accent), #35b89a); color: #04120f; box-shadow: 0 12px 30px rgba(82,210,167,0.22); }
+  .secondary { background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid var(--line); }
+  .ghost { background: transparent; border: 1px dashed rgba(124,196,255,0.35); color: var(--accent-2); }
+  select.profile { background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 11px 15px; font: inherit; font-weight: 700; }
+
+  .status-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 18px; }
+  .status { background: var(--panel-2); border: 1px solid var(--line); border-radius: 16px; padding: 14px; min-height: 92px; }
+  .status .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 6px; }
+  .status .value { font-size: 1.1rem; font-weight: 700; margin-bottom: 4px; }
+  .status .hint { color: var(--muted); font-size: 0.85rem; line-height: 1.4; }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+  .tab-btn { background: rgba(255,255,255,0.05); border: 1px solid var(--line); color: var(--muted); padding: 9px 14px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
+  .tab-btn.active { background: linear-gradient(135deg, var(--accent-2), #4f9fe0); color: #04121f; border-color: transparent; }
+
+  .panel { padding: 22px; margin-bottom: 20px; }
+  .panel h2 { margin: 0 0 4px; font-size: 1.15rem; letter-spacing: -0.02em; }
+  .panel .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 16px; }
+
+  .group { margin-bottom: 20px; }
+  .group h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent-2); margin: 0 0 10px; }
+  .feature-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  .feature {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--line); border-radius: 14px;
+    padding: 10px 12px; font-size: 0.88rem;
+  }
+  .feature.hidden-profile { display: none; }
+  .feature .tag { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+  .feature .fname { display: flex; flex-direction: column; }
+
+  .switch { position: relative; width: 40px; height: 22px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider-toggle { position: absolute; cursor: pointer; inset: 0; background: rgba(255,255,255,0.15); border-radius: 999px; transition: 0.2s; }
+  .slider-toggle::before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+  input:checked + .slider-toggle { background: linear-gradient(135deg, var(--accent), #35b89a); }
+  input:checked + .slider-toggle::before { transform: translateX(18px); }
+
+  select.mini, input.mini {
+    background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 6px 8px; font: inherit; font-size: 0.82rem; max-width: 130px;
+  }
+
+  .field { display: grid; gap: 8px; margin-bottom: 14px; }
+  .field label { color: var(--muted); font-size: 0.9rem; }
+  .field input, .field textarea { width: 100%; border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,0.04); color: var(--text); padding: 12px 14px; font: inherit; outline: none; }
+  .field textarea { min-height: 110px; resize: vertical; }
+
+  .ptz-pad { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 56px); gap: 8px; justify-content: center; margin: 10px 0 18px; }
+  .ptz-pad button { width: 56px; height: 56px; border-radius: 12px; font-size: 1rem; padding: 0; }
+  .ptz-pad .empty { background: transparent; box-shadow: none; cursor: default; }
+
+  .joystick-row { display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start; margin: 10px 0 6px; }
+
+  .joystick-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .joystick-base {
+    position: relative; width: 180px; height: 180px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, rgba(124,196,255,0.10), rgba(255,255,255,0.02) 60%),
+                var(--panel-2);
+    border: 1px solid var(--line);
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.45);
+    touch-action: none;
+    user-select: none;
+  }
+  .joystick-base::before {
+    content: ""; position: absolute; inset: 14px; border-radius: 50%;
+    border: 1px dashed rgba(255,255,255,0.12);
+  }
+  .joystick-crosshair-h, .joystick-crosshair-v {
+    position: absolute; background: rgba(255,255,255,0.08);
+  }
+  .joystick-crosshair-h { left: 8px; right: 8px; top: 50%; height: 1px; transform: translateY(-0.5px); }
+  .joystick-crosshair-v { top: 8px; bottom: 8px; left: 50%; width: 1px; transform: translateX(-0.5px); }
+  .joystick-knob {
+    position: absolute; width: 54px; height: 54px; border-radius: 50%;
+    left: 50%; top: 50%; transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, var(--accent-2), #4f9fe0);
+    box-shadow: 0 10px 24px rgba(82,163,255,0.35), inset 0 -4px 8px rgba(0,0,0,0.2);
+    cursor: grab; display: flex; align-items: center; justify-content: center;
+    color: #04121f; font-weight: 800; font-size: 0.72rem;
+  }
+  .joystick-knob:active { cursor: grabbing; }
+  .joystick-readout { display: flex; gap: 14px; font-size: 0.8rem; color: var(--muted); }
+  .joystick-readout b { color: var(--text); }
+
+  .zoom-rocker { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .zoom-track {
+    position: relative; width: 46px; height: 160px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.4);
+    touch-action: none; user-select: none;
+  }
+  .zoom-fill {
+    position: absolute; left: 4px; right: 4px; bottom: 4px; border-radius: 999px;
+    background: linear-gradient(180deg, var(--accent), #2e9c82);
+    height: 50%;
+  }
+  .zoom-handle {
+    position: absolute; left: 50%; width: 38px; height: 22px; border-radius: 10px;
+    transform: translate(-50%, 50%); bottom: 50%;
+    background: rgba(255,255,255,0.9); cursor: grab;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.35);
+  }
+  .zoom-handle:active { cursor: grabbing; }
+  .zoom-label { font-size: 0.78rem; color: var(--muted); text-align: center; }
+  .zoom-btns { display: flex; gap: 8px; }
+  .zoom-btns button { width: 40px; height: 32px; padding: 0; font-size: 1rem; border-radius: 10px; }
+
+  .preset-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .preset-btn { background: rgba(255,255,255,0.05); border: 1px solid var(--line); color: var(--text); padding: 8px 12px; border-radius: 10px; font-size: 0.82rem; font-weight: 700; }
+  .preset-btn.store-mode { border-color: var(--danger); color: var(--danger); }
+
+  /* ===== Hardware panel look (GoStream / Fomako) ===== */
+  .hw-wrap { margin-bottom: 22px; }
+  .hw-caption { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .hw-caption .sub { margin: 0; }
+
+  .hw-panel {
+    position: relative;
+    border-radius: 16px;
+    padding: 18px;
+    background: linear-gradient(160deg, #34383f 0%, #202329 45%, #16181c 100%);
+    border: 1px solid rgba(255,255,255,0.06);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.5);
+  }
+  .hw-brand-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .hw-brand { font-weight: 900; letter-spacing: 0.06em; font-size: 0.95rem; color: #f2f4f8; }
+  .hw-model { font-weight: 700; font-size: 0.72rem; letter-spacing: 0.18em; color: #8a93a6; }
+
+  .hw-knob-cluster { display: flex; gap: 22px; }
+  .hw-knob-item { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .hw-knob-label { font-size: 0.62rem; letter-spacing: 0.06em; color: #90970aa; color: #9aa2b5; }
+  .knob {
+    width: 46px; height: 46px; border-radius: 50%; position: relative; cursor: grab;
+    background: radial-gradient(circle at 35% 30%, #6a6f78, #232529 70%);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,255,255,0.25);
+    touch-action: none;
+  }
+  .knob::after {
+    content: ""; position: absolute; top: 4px; left: 50%; width: 3px; height: 14px;
+    background: #d7dbe3; border-radius: 2px; transform-origin: 50% 19px;
+    transform: translateX(-50%) rotate(var(--rot, -100deg));
+  }
+
+  .hw-top-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 16px; }
+  .hw-transport { display: flex; gap: 8px; align-items: center; }
+  .transport-btn {
+    width: 34px; height: 34px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);
+    background: linear-gradient(180deg, #3c4048, #24272c); color: #cfd4de;
+    display: flex; align-items: center; justify-content: center; font-size: 0.75rem; padding: 0;
+  }
+  .transport-btn.rec-btn { background: linear-gradient(180deg, #ff5757, #c62c2c); color: #2a0505; }
+
+  .hw-row { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+  .hw-row-label { width: 62px; flex: none; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em; color: #9aa2b5; }
+  .led-group { display: flex; gap: 8px; }
+  .led-btn {
+    width: 40px; height: 40px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);
+    background: linear-gradient(180deg, #3a3e45, #202327); color: #cfd4de; font-weight: 800; font-size: 0.85rem;
+    padding: 0; display: flex; align-items: center; justify-content: center;
+  }
+  .led-btn.on-red { background: linear-gradient(180deg, #ff5c5c, #c11f1f); color: #2a0505; box-shadow: 0 0 16px rgba(255,60,60,0.55); }
+  .led-btn.on-green { background: linear-gradient(180deg, #58e39c, #23a468); color: #04150c; box-shadow: 0 0 16px rgba(60,220,140,0.5); }
+  .led-btn.small { width: 34px; height: 30px; font-size: 0.72rem; }
+  .led-btn.on-amber { background: linear-gradient(180deg, #ffcf7a, #d99a2e); color: #2a1a02; box-shadow: 0 0 14px rgba(255,207,122,0.5); }
+
+  .hw-bottom-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 16px; gap: 16px; flex-wrap: wrap; }
+  .transition-group { display: flex; flex-direction: column; gap: 8px; }
+  .transition-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  .transition-btn {
+    padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); font-size: 0.68rem; font-weight: 800;
+    background: linear-gradient(180deg, #3a3e45, #202327); color: #cfd4de;
+  }
+  .transition-btn.active { background: linear-gradient(180deg, var(--accent-2), #4f9fe0); color: #04121f; }
+  .cutauto-group { display: flex; gap: 8px; }
+  .cutauto-btn { padding: 14px 20px; border-radius: 10px; font-size: 0.85rem; font-weight: 900; background: linear-gradient(180deg, #eef1f6, #c7cdda); color: #14161c; }
+  .cutauto-btn:active { transform: translateY(1px); }
+
+  .hw-fader-col { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .fader-track {
+    position: relative; width: 40px; height: 180px; border-radius: 10px;
+    background: linear-gradient(180deg, #101216, #16181c); border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: inset 0 0 14px rgba(0,0,0,0.6); touch-action: none;
+  }
+  .fader-track::before { content: ""; position: absolute; left: 50%; top: 8px; bottom: 8px; width: 2px; background: rgba(255,255,255,0.12); transform: translateX(-50%); }
+  .fader-handle {
+    position: absolute; left: 50%; width: 46px; height: 24px; border-radius: 6px;
+    transform: translate(-50%, 50%); bottom: 0%; cursor: grab;
+    background: linear-gradient(180deg, #d8dce4, #9aa1ae);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  }
+  .fader-label { font-size: 0.62rem; letter-spacing: 0.1em; color: #9aa2b5; font-weight: 800; }
+
+  .hw-flash-status { margin-top: 12px; font-size: 0.8rem; color: var(--muted); }
+
+  /* Fomako panel */
+  .fomako-panel { display: grid; grid-template-columns: 92px 1fr 200px; gap: 18px; }
+  .fk-col { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .fk-zoom-strip { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .ring-knob {
+    width: 44px; height: 44px; border-radius: 50%; position: relative; cursor: grab; touch-action: none;
+    background: radial-gradient(circle at 35% 30%, #4a4e56, #1d1f23 70%);
+    box-shadow: 0 3px 8px rgba(0,0,0,0.5);
+  }
+  .ring-knob::before { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 3px solid var(--ring-color, #b06bff); opacity: 0.85; }
+  .ring-knob::after {
+    content: ""; position: absolute; top: 4px; left: 50%; width: 2px; height: 12px;
+    background: #eef1f6; transform-origin: 50% 17px; transform: translateX(-50%) rotate(var(--rot, -100deg));
+  }
+  .ring-knob.small { width: 34px; height: 34px; }
+  .fk-knob-label { font-size: 0.6rem; letter-spacing: 0.08em; color: #9aa2b5; font-weight: 800; margin-top: -8px; }
+
+  .lcd-screen {
+    background: linear-gradient(180deg, #0d1a22, #081016);
+    border: 3px solid #05070a; border-radius: 8px; padding: 10px 12px;
+    box-shadow: inset 0 0 16px rgba(0,0,0,0.6);
+    display: flex; gap: 10px; min-height: 100px;
+  }
+  .lcd-menu { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 0.68rem; color: #7fe3c9; font-family: "Consolas", monospace; }
+  .lcd-row { display: flex; justify-content: space-between; }
+  .lcd-row span { color: #d7fff2; }
+  .lcd-preview {
+    flex: none; width: 140px; min-height: 90px; border-radius: 4px; background: #000;
+    display: flex; align-items: center; justify-content: center; font-size: 0.58rem; color: #7fa8c9;
+    text-align: center; padding: 0; border: 1px solid rgba(255,255,255,0.08);
+    overflow: hidden; position: relative;
+  }
+  .lcd-preview video {
+    width: 100%; height: 100%; object-fit: cover; display: block; background: #000;
+  }
+  .lcd-preview .lcd-preview-label {
+    position: absolute; left: 4px; bottom: 4px; padding: 2px 5px; border-radius: 3px;
+    background: rgba(0,0,0,0.65); color: #7fe3c9; font-size: 0.55rem; font-family: "Consolas", monospace;
+    pointer-events: none;
+  }
+  .lcd-preview.empty-preview {
+    background: linear-gradient(160deg, #223447, #101a24);
+  }
+  .ptz-live-preview {
+    margin-top: 14px; width: 100%; max-width: 480px; aspect-ratio: 16 / 9;
+    border-radius: 12px; border: 1px solid var(--line); overflow: hidden; background: #000;
+    position: relative;
+  }
+  .ptz-live-preview video {
+    width: 100%; height: 100%; object-fit: contain; display: block; background: #000;
+  }
+  .ptz-live-preview .ptz-live-label {
+    position: absolute; left: 8px; top: 8px; padding: 4px 8px; border-radius: 6px;
+    background: rgba(0,0,0,0.65); color: var(--accent); font-size: 0.72rem; font-weight: 700;
+  }
+  .ptz-live-preview .ptz-live-empty {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 0.85rem; text-align: center; padding: 12px;
+  }
+  .ptz-live-preview .ptz-live-empty.hidden { display: none; }
+
+  /* EQ graphic panel */
+  .eq-panel { margin-bottom: 18px; }
+  .eq-canvas-wrap {
+    background: #0a0e16; border: 1px solid var(--line); border-radius: 14px; padding: 12px;
+    position: relative;
+  }
+  .eq-canvas-wrap canvas { width: 100%; height: 200px; display: block; cursor: crosshair; }
+  .eq-band-row {
+    display: flex; gap: 4px; justify-content: space-between; margin-top: 10px; overflow-x: auto; padding-bottom: 4px;
+  }
+  .eq-band {
+    flex: 1; min-width: 28px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .eq-band input[type=range] {
+    writing-mode: vertical-lr; direction: rtl; height: 100px; width: 22px; accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .eq-band .eq-freq { font-size: 0.58rem; color: var(--muted); }
+  .eq-band .eq-db { font-size: 0.65rem; color: var(--text); font-weight: 700; }
+  .eq-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
+  .eq-toolbar select, .eq-toolbar button {
+    background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 0.8rem; font-weight: 700; cursor: pointer;
+  }
+  .eq-toolbar button.active { background: linear-gradient(135deg, var(--accent), #35b89a); color: #04120f; border-color: transparent; }
+  .eq-meter-row { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+  .eq-meter {
+    flex: 1; min-width: 120px; background: rgba(255,255,255,0.04); border-radius: 10px; padding: 8px 10px;
+    border: 1px solid var(--line); font-size: 0.75rem; color: var(--muted);
+  }
+  .eq-meter b { color: var(--text); }
+
+  /* Peavey PV10BT style mixer */
+  .pv-shell {
+    background: linear-gradient(180deg, #3a3d44 0%, #2a2d33 40%, #1e2025 100%);
+    border-radius: 12px; border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 16px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06);
+    padding: 14px 12px 16px; margin-bottom: 12px;
+  }
+  .pv-brand-row {
+    display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; padding: 0 4px;
+  }
+  .pv-brand { font-weight: 900; letter-spacing: 0.08em; font-size: 1rem; color: #f0f2f6; }
+  .pv-model { font-weight: 800; font-size: 0.72rem; letter-spacing: 0.14em; color: #9aa2b5; }
+  .pv-sub { font-size: 0.65rem; color: #7a8294; margin-top: 2px; }
+  .mixer-board {
+    display: flex; gap: 5px; overflow-x: auto; padding: 4px 2px 6px; margin-bottom: 0;
+    background: transparent; border: 0; border-radius: 0;
+  }
+  .mx-ch {
+    flex: none; width: 70px; background: rgba(0,0,0,0.22); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px; padding: 8px 4px; display: flex; flex-direction: column; align-items: center; gap: 5px;
+  }
+  .mx-ch.stereo { width: 78px; background: rgba(80,100,140,0.12); }
+  .mx-ch.media { width: 86px; background: rgba(90,70,40,0.15); }
+  .mx-ch.master { width: 88px; background: rgba(40,50,40,0.35); border-color: rgba(120,140,100,0.3); }
+  .mx-ch .mx-label { font-size: 0.6rem; font-weight: 800; letter-spacing: 0.05em; color: #b8c0d0; text-align: center; line-height: 1.2; }
+  .mx-ch.master .mx-label { color: #c8e0a8; }
+  .mx-knob-row { display: flex; flex-direction: column; gap: 3px; width: 100%; align-items: center; }
+  .mx-knob-mini {
+    width: 100%; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  }
+  .mx-knob-mini span { font-size: 0.5rem; color: #8a92a4; letter-spacing: 0.04em; }
+  .mx-knob-mini input[type=range] {
+    width: 100%; height: 14px; accent-color: #6a9fd8; cursor: pointer;
+  }
+  .mx-knob-mini.high input { accent-color: #e8c96a; }
+  .mx-knob-mini.mid input { accent-color: #6ecf8e; }
+  .mx-knob-mini.low input { accent-color: #6a9fd8; }
+  .mx-ch input[type=range].mx-fader {
+    writing-mode: vertical-lr; direction: rtl; height: 110px; width: 26px; accent-color: #8ab4e8;
+    cursor: pointer;
+  }
+  .mx-ch.master input[type=range].mx-fader { accent-color: #a8d070; height: 120px; }
+  .mx-ch input[type=range].mx-gain {
+    width: 100%; height: 14px; accent-color: #e8a050;
+  }
+  .mx-btns { display: flex; flex-direction: column; gap: 3px; width: 100%; }
+  .mx-btns button {
+    width: 100%; padding: 3px 0; border-radius: 5px; font-size: 0.58rem; font-weight: 800;
+    background: rgba(255,255,255,0.08); color: #9aa2b5; border: 1px solid transparent; cursor: pointer;
+  }
+  .mx-btns button.on-mute { background: linear-gradient(180deg, #ff5c5c, #c11f1f); color: #2a0505; }
+  .mx-btns button.on-solo { background: linear-gradient(180deg, #ffcf7a, #d99a2e); color: #2a1a02; }
+  .mx-btns button.on-48 { background: linear-gradient(180deg, #7cc4ff, #4f9fe0); color: #04121f; }
+  .mx-btns button.on-hpf { background: linear-gradient(180deg, #a78bfa, #7c5cbf); color: #1a0a2e; }
+  .mx-btns button.on-comp { background: linear-gradient(180deg, #58e39c, #23a468); color: #04150c; }
+  .mx-pan { width: 100%; accent-color: #8ab4e8; height: 14px; }
+  .mx-level { font-size: 0.58rem; color: #d0d6e0; font-weight: 700; }
+  .mx-led {
+    width: 8px; height: 8px; border-radius: 50%; background: #2a3038; border: 1px solid rgba(255,255,255,0.1);
+  }
+  .mx-led.sig { background: #3d8f5a; box-shadow: 0 0 6px rgba(60,180,100,0.5); }
+  .mx-led.clip { background: #e05050; box-shadow: 0 0 6px rgba(220,60,60,0.6); }
+  .pv-side {
+    flex: none; width: 130px; background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px; padding: 8px 8px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .pv-side h4 { margin: 0; font-size: 0.62rem; letter-spacing: 0.1em; color: #9aa2b5; font-weight: 800; }
+  .pv-lcd {
+    background: #0c1a14; border: 2px solid #050808; border-radius: 4px; padding: 6px 8px;
+    font-family: "Consolas", monospace; font-size: 0.68rem; color: #6ee0a8; min-height: 36px;
+  }
+  .pv-side select, .pv-side button {
+    width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);
+    background: linear-gradient(180deg, #4a4e56, #2e3238); color: #d0d6e0; font-size: 0.68rem; font-weight: 700;
+    cursor: pointer;
+  }
+  .pv-side .pv-kosmos-row { display: flex; gap: 6px; }
+  .pv-side .pv-kosmos-row label { flex: 1; font-size: 0.55rem; color: #8a92a4; text-align: center; }
+  .pv-side .pv-kosmos-row input { width: 100%; accent-color: #e8c96a; }
+  .mx-status-line { font-size: 0.8rem; color: var(--muted); margin-top: 8px; }
+
+  .fn-btn-row { display: flex; gap: 8px; margin: 10px 0; }
+  .fn-btn { flex: 1; padding: 8px; border-radius: 8px; font-size: 0.7rem; font-weight: 800; background: linear-gradient(180deg, #bfe9ff, #7fd0ff); color: #06222f; }
+
+  .keypad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .keypad-btn { padding: 9px 0; border-radius: 8px; font-size: 0.8rem; font-weight: 800; background: linear-gradient(180deg, #bfe9ff, #7fd0ff); color: #06222f; }
+  .keypad-btn.wide { grid-column: span 3; background: linear-gradient(180deg, #ffe3a3, #ffc65e); color: #2a1a02; }
+  .keypad-btn.func { background: linear-gradient(180deg, #e2e6ee, #b8bfcd); color: #14161c; }
+
+  .fk-right-col { align-items: center; }
+  .ptz-mini-btns { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+  .ptz-mini-btn { padding: 7px 0; border-radius: 8px; font-size: 0.68rem; font-weight: 800; background: linear-gradient(180deg, #bfe9ff, #7fd0ff); color: #06222f; }
+
+  .fomako-knob { background: radial-gradient(circle at 40% 30%, #4a4e56, #1a1c20 70%) !important; }
+  .fomako-knob::before { content: ""; position: absolute; inset: -8px; border-radius: 50%; border: 6px solid #ffb020; box-shadow: 0 0 12px rgba(255,176,32,0.5); }
+  .fomako-knob .stick-cap { width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #6a6f78, #232529); }
+
+  @media (max-width: 900px) {
+    .fomako-panel { grid-template-columns: 1fr; }
+    .hw-bottom-row { flex-direction: column; align-items: stretch; }
+  }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+  .chip { padding: 9px 12px; border-radius: 999px; background: rgba(255,255,255,0.05); border: 1px solid var(--line); color: var(--text); font-size: 0.86rem; }
+
+  .footer { color: var(--muted); font-size: 0.88rem; text-align: center; padding: 12px 0 4px; }
+
+  /* Local webcam / laptop camera */
+  .local-cam-panel {
+    margin-bottom: 22px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 16px;
+  }
+  .local-cam-header {
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .local-cam-header h3 { margin: 0; font-size: 0.95rem; letter-spacing: -0.01em; }
+  .local-cam-controls {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  }
+  .local-cam-controls select {
+    background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid var(--line);
+    border-radius: 12px; padding: 9px 12px; font: inherit; font-size: 0.85rem; min-width: 200px; max-width: 360px;
+  }
+  .cam-preview-wrap {
+    position: relative; width: 100%; max-width: 640px; aspect-ratio: 16 / 9;
+    background: #05080f; border-radius: 12px; border: 1px solid var(--line);
+    overflow: hidden; margin: 14px auto 0;
+  }
+  .cam-preview-wrap video {
+    width: 100%; height: 100%; object-fit: contain; background: #000; display: block;
+  }
+  .cam-preview-placeholder {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px; color: var(--muted); font-size: 0.9rem; text-align: center; padding: 16px;
+  }
+  .cam-preview-placeholder.hidden { display: none; }
+  .cam-status { margin-top: 10px; font-size: 0.82rem; color: var(--muted); text-align: center; }
+  .cam-status.error { color: var(--danger); }
+  .cam-status.ok { color: var(--accent); }
+  .cam-badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+    background: rgba(82,210,167,0.12); color: var(--accent); font-size: 0.72rem; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .cam-badge.off { background: rgba(255,255,255,0.06); color: var(--muted); }
+  .mc-src {
+    padding: 8px 12px; border-radius: 10px; font-size: 0.78rem; font-weight: 800;
+    background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid var(--line);
+    cursor: pointer; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mc-src.program {
+    background: linear-gradient(135deg, #ff5c5c, #c11f1f); color: #2a0505; border-color: transparent;
+    box-shadow: 0 0 14px rgba(255,60,60,0.35);
+  }
+  .mc-src.preview {
+    background: linear-gradient(135deg, #58e39c, #23a468); color: #04150c; border-color: transparent;
+  }
+  .mc-src:disabled { opacity: 0.45; cursor: default; }
+
+  @media (max-width: 980px) { .hero { grid-template-columns: 1fr; } .status-grid { grid-template-columns: 1fr 1fr; } }
+</style>
 </head>
 <body>
-  <h1>Live Camera Stream</h1>
+<div class="wrap">
 
-  <div class="card">
-    <label>Mode</label>
-    <select id="mode">
-      <option value="broadcast">Broadcast (Android phone)</option>
-      <option value="watch">Watch (anyone)</option>
-    </select>
-
-    <label>Stream ID</label>
-    <input id="streamId" type="text" value="mycam" placeholder="e.g. mycam" />
-
-    <button id="startBtn">Start</button>
-    <button id="stopBtn" class="secondary" disabled>Stop</button>
-
-    <div class="hint">
-      <b>Phone:</b> Broadcast → Start<br>
-      <b>Other device:</b> Watch → type the exact same Stream ID → Start<br>
-      If you get “ID is taken”, change the Stream ID (e.g. mycam2) and try again.
+  <section class="hero">
+    <div class="card masthead">
+      <div class="eyebrow">Church AV Suite · local browser</div>
+      <h1>Sources, mix, EQ, and record — in one place.</h1>
+      <p class="lede">
+        Simple service workflow: open a camera, shape sound on the mixer/EQ, cut between sources, and record to a file.
+        Hardware panels (GoStream, Fomako, Peavey PV10BT) stay available as control surfaces for planning and practice.
+      </p>
+      <div class="notice">
+        <strong>Works now:</strong> laptop / UVC USB webcams · mic through EQ + mixer · multi‑cam cut/fade · local recording · session presets.<br>
+        <strong>Needs extra gear/software:</strong> USB security cams that are not webcams · RTSP IP cams · RTMP/NDI/HDMI switchers.
+      </div>
+      <div class="actions">
+        <button class="primary" id="quickCamButton">1 · Start camera</button>
+        <button class="secondary" id="toggleRecordButton">2 · Record</button>
+        <button class="secondary" id="saveButton">Save settings</button>
+        <button class="secondary" id="exportPresetBtn">Export preset</button>
+        <button class="secondary" id="importPresetBtn">Import preset</button>
+        <input type="file" id="importPresetFile" accept="application/json,.json" style="display:none" />
+        <select class="profile" id="profileSelect">
+          <option value="both">Profile: Both devices</option>
+          <option value="gostream">Profile: OSEE GoStream only</option>
+          <option value="fomako">Profile: Fomako NDI‑HX only</option>
+        </select>
+        <button class="ghost" id="resetButton">Reset all</button>
+      </div>
     </div>
-  </div>
 
-  <video id="video" autoplay playsinline muted></video>
-  <div id="status">Ready</div>
-
-  <div class="card" style="max-width:520px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-      <label style="margin:0;">Debug log (errors are NOT hidden)</label>
-      <button id="clearLogBtn" class="secondary" style="width:auto; padding:0.3rem 0.7rem; margin:0; font-size:0.8rem;">Clear</button>
+    <div class="card status-grid">
+      <div class="status">
+        <div class="label">Camera</div>
+        <div class="value" id="liveState">Standby</div>
+        <div class="hint">Program source status.</div>
+      </div>
+      <div class="status">
+        <div class="label">Recording</div>
+        <div class="value" id="recordState">Idle</div>
+        <div class="hint">Saves video + processed audio.</div>
+      </div>
+      <div class="status">
+        <div class="label">Audio path</div>
+        <div class="value" id="streamCountState">Mic · EQ · Mix</div>
+        <div class="hint">Live monitor to speakers.</div>
+      </div>
+      <div class="status">
+        <div class="label">Device profile</div>
+        <div class="value" id="profileState">Both devices</div>
+        <div class="hint">Filters feature tabs.</div>
+      </div>
     </div>
-    <div id="debugLog"></div>
+  </section>
+
+  <!-- Primary source panel -->
+  <section class="card panel" id="alwaysCamSection" style="margin-bottom:20px;">
+    <h2>1 · Video sources</h2>
+    <div class="sub">
+      Use a <b>laptop camera</b> or standard <b>USB webcam</b> (must show up in the Windows Camera app).
+      Then shape audio in <b>Mixing Board</b> / <b>EQ System</b> tabs and hit <b>Record</b>.
+      Security cameras on USB only work if Windows lists them as a camera; network cams need a working HTTP/MJPEG URL.
+    </div>
+    <div class="local-cam-panel" style="margin:0; background:transparent; border:0; padding:0;">
+      <div class="local-cam-header">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <span class="cam-badge off" id="camLiveBadge">Off</span>
+          <span class="cam-badge off" id="audioEngineBadge">Audio: Off</span>
+          <span class="cam-badge off" id="recordLiveBadge">Rec idle</span>
+          <span id="recordTimer" style="font-size:0.85rem;font-weight:700;color:var(--danger);min-width:3rem;"></span>
+        </div>
+      </div>
+      <div class="local-cam-controls">
+        <select id="camDeviceSelect" title="Choose camera">
+          <option value="">Click Start to list cameras…</option>
+        </select>
+        <button class="primary" id="camStartBtn" type="button">Start camera</button>
+        <button class="secondary" id="camStopBtn" type="button">Stop</button>
+        <button class="primary" id="localRecordBtn" type="button">Record</button>
+        <button class="ghost" id="camRefreshBtn" type="button">Refresh / detect USB</button>
+        <button class="secondary" id="camPlugPlayBtn" type="button">Use newly plugged camera</button>
+      </div>
+      <div id="usbDeviceDiag" style="margin-top:8px;font-size:0.78rem;color:var(--muted);line-height:1.45;">Plug in a USB camera, then click Refresh / detect USB.</div>
+      <div class="cam-preview-wrap" style="position:relative;">
+        <video id="camPreview" playsinline autoplay muted></video>
+        <video id="camPreviewB" playsinline autoplay muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;opacity:0;pointer-events:none;"></video>
+        <img id="ipCamPreview" alt="IP camera" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:none;" />
+        <div class="cam-preview-placeholder" id="camPlaceholder">
+          <div>No camera active</div>
+          <div style="font-size:0.8rem;">Press <b>Start camera</b> for laptop webcam, or <b>Connect IP cam</b> for 192.168.1.72.</div>
+        </div>
+      </div>
+      <div class="multicam-bar" id="multicamBar" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center;">
+        <span style="font-size:0.75rem;font-weight:800;letter-spacing:0.08em;color:var(--muted);text-transform:uppercase;">Program sources</span>
+        <div id="multicamSources" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+        <button type="button" class="secondary" id="mcCutBtn" style="font-size:0.8rem;">CUT</button>
+        <button type="button" class="secondary" id="mcFadeBtn" style="font-size:0.8rem;">FADE</button>
+        <select id="mcTransition" style="background:rgba(255,255,255,0.06);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font:inherit;font-size:0.8rem;">
+          <option value="cut">Take: Cut</option>
+          <option value="fade">Take: Fade</option>
+        </select>
+      </div>
+
+      <div class="ipcam-box" style="margin-top:16px;padding:14px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,0.03);">
+        <div style="font-size:0.75rem;font-weight:800;letter-spacing:0.08em;color:var(--accent-2);text-transform:uppercase;margin-bottom:10px;">IP / security camera (network)</div>
+        <div class="local-cam-controls" style="margin-bottom:8px;">
+          <input id="ipCamHost" type="text" value="192.168.1.72" placeholder="IP address" style="background:rgba(255,255,255,0.06);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:9px 12px;font:inherit;font-size:0.85rem;width:140px;" />
+          <input id="ipCamUser" type="text" placeholder="User (optional)" style="background:rgba(255,255,255,0.06);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:9px 12px;font:inherit;font-size:0.85rem;width:120px;" />
+          <input id="ipCamPass" type="password" placeholder="Password" style="background:rgba(255,255,255,0.06);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:9px 12px;font:inherit;font-size:0.85rem;width:120px;" />
+          <select id="ipCamPreset" style="background:rgba(255,255,255,0.06);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:9px 12px;font:inherit;font-size:0.85rem;">
+            <option value="auto">Auto-try common paths</option>
+            <option value="mjpeg">Generic MJPEG /video</option>
+            <option value="hikvision">Hikvision</option>
+            <option value="dahua">Dahua</option>
+            <option value="axis">Axis</option>
+            <option value="foscam">Foscam</option>
+            <option value="custom">Custom URL</option>
+          </select>
+          <button type="button" class="primary" id="ipCamConnectBtn">Connect IP cam</button>
+          <button type="button" class="secondary" id="ipCamStopBtn">Stop IP</button>
+        </div>
+        <input id="ipCamCustomUrl" type="text" placeholder="Custom stream URL (http://…/mjpeg) — or leave blank for auto" style="width:100%;background:rgba(255,255,255,0.06);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:9px 12px;font:inherit;font-size:0.82rem;margin-bottom:8px;box-sizing:border-box;" />
+        <div style="font-size:0.78rem;color:var(--muted);line-height:1.45;">
+          Browsers can show <b>HTTP MJPEG / snapshot</b>. Many security cams use <b>RTSP</b> (<code>rtsp://192.168.1.72:554/…</code>), which Chrome cannot play directly — use HTTP path from the camera manual, or enter a full custom URL.
+        </div>
+        <div class="cam-status" id="ipCamStatus" style="margin-top:8px;">IP camera idle — IP set to 192.168.1.72</div>
+      </div>
+
+      <div class="cam-status" id="camStatus">Ready — press Start camera to use your laptop’s built-in camera.</div>
+    </div>
+  </section>
+
+  <div class="tabs" id="tabs"></div>
+  <div id="panels"></div>
+
+  <section class="card panel">
+    <h2>Service Details</h2>
+    <div class="sub">Kept from the original session notes panel.</div>
+    <div class="field">
+      <label for="serviceName">Service title</label>
+      <input id="serviceName" type="text" value="Sunday Morning Service" />
+    </div>
+    <div class="field">
+      <label for="notes">Session notes</label>
+      <textarea id="notes">Camera 1 is wide. Camera 2 is close. Keep lower thirds minimal. Export after cleanup.</textarea>
+    </div>
+    <div class="chips">
+      <div class="chip">Recording folder: recordings/</div>
+      <div class="chip">ISO folder: iso/</div>
+      <div class="chip">Upload folder: uploads/</div>
+      <div class="chip">Logs folder: logs/</div>
+    </div>
+  </section>
+
+  <div class="footer">
+    Local-only page. Configuration saves in this browser profile.
+    Laptop webcam uses the browser camera API. For best results open this page via a local server (not always required).
   </div>
+</div>
 
-  <script>
-    const modeSelect = document.getElementById('mode');
-    const streamIdInput = document.getElementById('streamId');
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const video = document.getElementById('video');
-    const statusEl = document.getElementById('status');
+<script>
+const storageKey = "church-av-suite-session-v2";
 
-    let peer = null;
-    let localStream = null;
-    let currentCall = null;
-    let dataConn = null;
-    let currentMode = null;
-    let currentId = null;
-    let retryTimeout = null;       // for retrying after a peer/network error
-    let reconnectTimeout = null;   // for retrying after a watchdog-detected ICE drop
-    let connectTimeout = null;     // hard cap on "Connecting…" so it can't hang forever
-    let watchdogInterval = null;
-    let manualStop = false;
-    let reconnecting = false;      // true while a reconnect is already scheduled/in-flight
+// ---------- Feature data model ----------
+// profile: "gostream" | "fomako" | "common"
+// type: "toggle" | "select" | "text"
+const CATEGORIES = [
+  {
+    id: "inputs", label: "Video Inputs",
+    groups: [
+      { title: "Capture Inputs", features: [
+        { id: "in_hdmi", name: "HDMI input", profile: "common", type: "toggle" },
+        { id: "in_sdi", name: "SDI input", profile: "common", type: "toggle" },
+        { id: "in_ndi", name: "NDI input", profile: "gostream", type: "toggle" },
+        { id: "in_usb", name: "USB / laptop webcam (live)", profile: "common", type: "toggle" },
+        { id: "in_ip", name: "IP stream input (RTSP/RTMP/SRT)", profile: "gostream", type: "toggle" },
+      ]},
+      { title: "Camera Capture (Fomako)", features: [
+        { id: "cam_sensor", name: "CMOS sensor", profile: "fomako", type: "toggle" },
+        { id: "cam_res", name: "Resolution", profile: "fomako", type: "select", options: ["1080p", "720p", "4K"] },
+        { id: "cam_fps", name: "Framerate", profile: "fomako", type: "select", options: ["30fps", "60fps"] },
+        { id: "cam_ozoom", name: "Optical zoom", profile: "fomako", type: "select", options: ["10x", "20x", "30x"] },
+        { id: "cam_dzoom", name: "Digital zoom", profile: "fomako", type: "toggle" },
+        { id: "cam_af", name: "Auto-focus", profile: "fomako", type: "toggle" },
+        { id: "cam_ae", name: "Auto-exposure", profile: "fomako", type: "toggle" },
+        { id: "cam_awb", name: "Auto white balance", profile: "fomako", type: "toggle" },
+        { id: "cam_lowlight", name: "Low-light mode", profile: "fomako", type: "toggle" },
+        { id: "cam_wdr", name: "Wide Dynamic Range (WDR)", profile: "fomako", type: "toggle" },
+      ]},
+    ]
+  },
+  {
+    id: "switching", label: "Switching",
+    groups: [
+      { title: "Program / Preview", features: [
+        { id: "sw_multicam", name: "Multi-camera switching", profile: "gostream", type: "toggle" },
+        { id: "sw_ppv", name: "Program + Preview workflow", profile: "gostream", type: "toggle" },
+        { id: "sw_trans", name: "Transitions (cut/fade/wipe)", profile: "gostream", type: "select", options: ["Cut", "Fade", "Wipe"] },
+        { id: "sw_pip", name: "Picture-in-Picture", profile: "gostream", type: "toggle" },
+        { id: "sw_split", name: "Split-screen modes", profile: "gostream", type: "toggle" },
+        { id: "sw_overlay", name: "Overlay layers (logos/lower thirds)", profile: "gostream", type: "toggle" },
+        { id: "sw_chroma", name: "Chroma key (green screen)", profile: "gostream", type: "toggle" },
+        { id: "sw_multiview", name: "Multiview monitor", profile: "gostream", type: "toggle" },
+      ]},
+    ]
+  },
+  {
+    id: "streaming", label: "Streaming",
+    groups: [
+      { title: "GoStream Outputs", features: [
+        { id: "st_rtmp", name: "RTMP streaming", profile: "common", type: "toggle" },
+        { id: "st_rtmps", name: "RTMPS streaming", profile: "gostream", type: "toggle" },
+        { id: "st_srt", name: "SRT streaming", profile: "common", type: "toggle" },
+        { id: "st_multi3", name: "Up to 3 simultaneous outputs", profile: "gostream", type: "toggle" },
+        { id: "st_ndiout_local", name: "Local network NDI output", profile: "gostream", type: "toggle" },
+        { id: "st_usbcam", name: "USB webcam output", profile: "gostream", type: "toggle" },
+      ]},
+      { title: "Fomako Network / NDI", features: [
+        { id: "st_ndihx", name: "NDI‑HX video output", profile: "fomako", type: "toggle" },
+        { id: "st_rtsp", name: "RTSP stream", profile: "fomako", type: "toggle" },
+        { id: "st_onvif", name: "ONVIF support", profile: "fomako", type: "toggle" },
+        { id: "st_h264", name: "H.264 encoding", profile: "fomako", type: "toggle" },
+        { id: "st_h265", name: "H.265 encoding", profile: "fomako", type: "toggle" },
+        { id: "st_mcast", name: "Multicast / unicast", profile: "fomako", type: "select", options: ["Unicast", "Multicast"] },
+        { id: "st_multistream", name: "Multiple simultaneous streams", profile: "fomako", type: "toggle" },
+      ]},
+    ]
+  },
+  {
+    id: "recording", label: "Recording",
+    groups: [
+      { title: "Capture", features: [
+        { id: "rec_sd", name: "Internal recording to SD card", profile: "gostream", type: "toggle" },
+        { id: "rec_ssd", name: "Recording to SSD (USB/SATA)", profile: "gostream", type: "toggle" },
+        { id: "rec_program", name: "Record Program feed", profile: "gostream", type: "toggle" },
+        { id: "rec_iso", name: "Record ISO feeds", profile: "gostream", type: "toggle" },
+        { id: "rec_format", name: "Format", profile: "gostream", type: "select", options: ["MP4", "MOV"] },
+        { id: "rec_bitrate", name: "Bitrate", profile: "gostream", type: "select", options: ["8 Mbps", "16 Mbps", "25 Mbps", "50 Mbps"] },
+      ]},
+    ]
+  },
+  {
+    id: "audio", label: "Audio",
+    groups: [
+      { title: "Inputs & Mixing", features: [
+        { id: "au_xlr", name: "XLR audio inputs", profile: "gostream", type: "toggle" },
+        { id: "au_35mm", name: "3.5mm mic input", profile: "common", type: "toggle" },
+        { id: "au_embed", name: "Embedded audio (HDMI/SDI)", profile: "common", type: "toggle" },
+        { id: "au_mixer", name: "Audio mixer (gain/EQ/routing)", profile: "gostream", type: "toggle" },
+        { id: "au_delay", name: "Audio delay adjustment", profile: "gostream", type: "toggle" },
+        { id: "au_monitor", name: "Audio monitoring", profile: "gostream", type: "toggle" },
+        { id: "au_afv", name: "Audio Follow Video (AFV)", profile: "gostream", type: "toggle" },
+        { id: "au_aac", name: "AAC encoding", profile: "fomako", type: "toggle" },
+        { id: "au_gain", name: "Gain control", profile: "fomako", type: "toggle" },
+      ]},
+    ]
+  },
+  {
+    id: "ptz", label: "PTZ (Fomako)",
+    groups: [
+      { title: "Movement", features: [
+        { id: "ptz_speed", name: "Speed control", profile: "fomako", type: "select", options: ["Slow", "Medium", "Fast"] },
+        { id: "ptz_presets", name: "Preset positions (store)", profile: "fomako", type: "toggle" },
+        { id: "ptz_recall", name: "Preset recall", profile: "fomako", type: "toggle" },
+        { id: "ptz_smooth", name: "Smooth motion algorithms", profile: "fomako", type: "toggle" },
+      ]},
+      { title: "Protocols", features: [
+        { id: "ptz_ip", name: "PTZ over IP", profile: "fomako", type: "toggle" },
+        { id: "ptz_serial", name: "PTZ over RS‑232 / RS‑485", profile: "fomako", type: "toggle" },
+        { id: "ptz_visca", name: "VISCA protocol", profile: "fomako", type: "toggle" },
+        { id: "ptz_pelcod", name: "Pelco‑D protocol", profile: "fomako", type: "toggle" },
+        { id: "ptz_pelcop", name: "Pelco‑P protocol", profile: "fomako", type: "toggle" },
+      ]},
+    ]
+  },
+  {
+    id: "control", label: "Control / Interface",
+    groups: [
+      { title: "GoStream Control", features: [
+        { id: "ct_hwbuttons", name: "Physical hardware buttons", profile: "gostream", type: "toggle" },
+        { id: "ct_tbar", name: "T-bar fader", profile: "gostream", type: "toggle" },
+        { id: "ct_knobs", name: "Rotary knobs", profile: "gostream", type: "toggle" },
+        { id: "ct_touch", name: "Touchscreen UI", profile: "gostream", type: "toggle" },
+        { id: "ct_webui", name: "Web UI control over LAN", profile: "common", type: "toggle" },
+        { id: "ct_scenes", name: "Scene presets", profile: "gostream", type: "toggle" },
+        { id: "ct_labels", name: "Source labeling", profile: "common", type: "toggle" },
+        { id: "ct_tally", name: "Tally output", profile: "common", type: "toggle" },
+      ]},
+      { title: "Fomako Control" , features: [
+        { id: "ct_joystick", name: "Joystick controller support", profile: "fomako", type: "toggle" },
+        { id: "ct_visca_ip", name: "VISCA over IP", profile: "fomako", type: "toggle" },
+        { id: "ct_visca_serial", name: "VISCA over serial", profile: "fomako", type: "toggle" },
+        { id: "ct_onvif_ctrl", name: "ONVIF device control", profile: "fomako", type: "toggle" },
+        { id: "ct_mobile", name: "Mobile app control", profile: "fomako", type: "toggle" },
+      ]},
+    ]
+  },
+  {
+    id: "eq", label: "EQ System",
+    groups: [
+      { title: "EQ Types", features: [
+        { id: "eq_graphic31", name: "31‑band graphic EQ", profile: "common", type: "toggle" },
+        { id: "eq_parametric", name: "Parametric EQ (3–8 bands)", profile: "common", type: "select", options: ["3 bands", "4 bands", "6 bands", "8 bands"] },
+        { id: "eq_q", name: "Fully adjustable Q (bandwidth)", profile: "common", type: "toggle" },
+        { id: "eq_hpf", name: "High‑pass filter (HPF)", profile: "common", type: "toggle" },
+        { id: "eq_lpf", name: "Low‑pass filter (LPF)", profile: "common", type: "toggle" },
+        { id: "eq_shelf", name: "High‑shelf / low‑shelf filters", profile: "common", type: "toggle" },
+        { id: "eq_notch", name: "Notch filters", profile: "common", type: "toggle" },
+        { id: "eq_dynamic", name: "Dynamic EQ (per‑band compression/expansion)", profile: "common", type: "toggle" },
+        { id: "eq_midside", name: "Mid/Side EQ", profile: "common", type: "toggle" },
+      ]},
+      { title: "Processing", features: [
+        { id: "eq_phase", name: "Phase rotation / phase linearization", profile: "common", type: "toggle" },
+        { id: "eq_stereo", name: "Stereo link/unlink", profile: "common", type: "toggle" },
+        { id: "eq_gainband", name: "Gain staging per band", profile: "common", type: "toggle" },
+        { id: "eq_zerolat", name: "Zero‑latency mode", profile: "common", type: "toggle" },
+        { id: "eq_linphase", name: "Linear‑phase mode", profile: "common", type: "toggle" },
+        { id: "eq_os", name: "Oversampling", profile: "common", type: "select", options: ["Off", "2x", "4x", "8x", "16x"] },
+        { id: "eq_autogain", name: "Auto‑gain compensation", profile: "common", type: "toggle" },
+        { id: "eq_limiter", name: "Limiter on output", profile: "common", type: "toggle" },
+        { id: "eq_sidechain", name: "Sidechain input (for dynamic EQ)", profile: "common", type: "toggle" },
+      ]},
+      { title: "Analysis & Control", features: [
+        { id: "eq_spectrum", name: "Spectrum analyzer", profile: "common", type: "toggle" },
+        { id: "eq_rta", name: "Real‑time RTA overlay", profile: "common", type: "toggle" },
+        { id: "eq_presets", name: "Preset system", profile: "common", type: "toggle" },
+        { id: "eq_tone", name: "LUT‑style tone presets", profile: "common", type: "toggle" },
+        { id: "eq_trim", name: "Input/output trim", profile: "common", type: "toggle" },
+        { id: "eq_solo", name: "Solo band / listen mode", profile: "common", type: "toggle" },
+        { id: "eq_grab", name: "Frequency grab (click‑to‑boost/cut)", profile: "common", type: "toggle" },
+        { id: "eq_match", name: "EQ match (reference curve)", profile: "common", type: "toggle" },
+        { id: "eq_noise", name: "Noise floor display", profile: "common", type: "toggle" },
+        { id: "eq_corr", name: "Phase correlation meter", profile: "common", type: "toggle" },
+        { id: "eq_midi", name: "MIDI control support", profile: "common", type: "toggle" },
+      ]},
+    ]
+  },
+  {
+    id: "mixer", label: "Mixing Board",
+    groups: [
+      { title: "Peavey PV10BT — Core & Preamps", features: [
+        { id: "pv_preamp", name: "Reference‑quality mic preamps (0.0007% THD)", profile: "common", type: "toggle" },
+        { id: "pv_combo", name: "4 combo XLR/¼\" inputs", profile: "common", type: "toggle" },
+        { id: "pv_phantom", name: "Global +48V phantom power", profile: "common", type: "toggle" },
+        { id: "pv_hpf14", name: "Selectable Hi‑Pass Filter (ch 1–4)", profile: "common", type: "toggle" },
+        { id: "pv_hiz", name: "On‑board Hi‑Z guitar preamp", profile: "common", type: "toggle" },
+        { id: "pv_hpf_all", name: "Hi‑pass filters on all channels", profile: "common", type: "toggle" },
+      ]},
+      { title: "Channel Controls", features: [
+        { id: "pv_eq3", name: "3‑band EQ on all channels", profile: "common", type: "toggle" },
+        { id: "pv_midmorph", name: "Peavey MidMorph® EQ (4 channels)", profile: "common", type: "toggle" },
+        { id: "pv_eqbypass", name: "EQ bypass switch per channel", profile: "common", type: "toggle" },
+        { id: "pv_comp", name: "Built‑in compression on 2 channels", profile: "common", type: "toggle" },
+        { id: "pv_mute", name: "Channel mute buttons", profile: "common", type: "toggle" },
+        { id: "pv_solo", name: "Listen / Solo function", profile: "common", type: "toggle" },
+        { id: "pv_clip", name: "LED clip & signal indicators", profile: "common", type: "toggle" },
+        { id: "pv_pan", name: "Stereo pan control per channel", profile: "common", type: "toggle" },
+      ]},
+      { title: "Inputs & Media Channels", features: [
+        { id: "pv_ch56", name: "Ch 5/6 stereo (¼\", RCA, 3.5mm)", profile: "common", type: "toggle" },
+        { id: "pv_ch78_usb", name: "Ch 7/8 USB‑A MP3/WAV playback", profile: "common", type: "toggle" },
+        { id: "pv_ch78_usbb", name: "Ch 7/8 USB‑B PC streaming", profile: "common", type: "toggle" },
+        { id: "pv_bt", name: "Bluetooth 3.0 + EDR (A2DP)", profile: "common", type: "toggle" },
+        { id: "pv_ch910", name: "Ch 9/10 stereo aux input/return", profile: "common", type: "toggle" },
+      ]},
+      { title: "Wireless, Digital FX & Outputs", features: [
+        { id: "pv_usba", name: "USB‑A media playback with LCD", profile: "common", type: "toggle" },
+        { id: "pv_usbb", name: "USB‑B streaming (16‑bit / 48 kHz)", profile: "common", type: "toggle" },
+        { id: "pv_fx", name: "Digital effects engine (16 FX)", profile: "common", type: "select", options: ["Off", "Hall reverb", "Room reverb", "Plate", "Delay", "Echo", "Chorus", "Chorus+Echo"] },
+        { id: "pv_main_xlr", name: "Main outs balanced XLR", profile: "common", type: "toggle" },
+        { id: "pv_main_trs", name: "Main outs ¼\" TRS", profile: "common", type: "toggle" },
+        { id: "pv_main_usb", name: "Main outs USB‑B", profile: "common", type: "toggle" },
+        { id: "pv_cr", name: "Dual control room outs (A/B)", profile: "common", type: "toggle" },
+        { id: "pv_aux", name: "Aux bus (XLR + ¼\" TRS)", profile: "common", type: "toggle" },
+        { id: "pv_hp", name: "Studio headphone output", profile: "common", type: "toggle" },
+        { id: "pv_meter", name: "Stereo master LED meter bridge", profile: "common", type: "toggle" },
+        { id: "pv_micmute", name: "Master mic mute", profile: "common", type: "toggle" },
+      ]},
+      { title: "Mixing & Utility", features: [
+        { id: "pv_fader60", name: "Precision 60mm master faders", profile: "common", type: "toggle" },
+        { id: "pv_kosmos", name: "KOSMOS® bass & treble enhancement", profile: "common", type: "toggle" },
+        { id: "pv_solobus", name: "Solo bus (HP / control room)", profile: "common", type: "toggle" },
+        { id: "pv_direct", name: "Direct outs on 4 mic channels", profile: "common", type: "toggle" },
+        { id: "pv_tablet", name: "Tablet cradle in chassis", profile: "common", type: "toggle" },
+        { id: "pv_steel", name: "Heavy‑gauge steel chassis", profile: "common", type: "toggle" },
+        { id: "pv_topio", name: "Top‑mounted inputs", profile: "common", type: "toggle" },
+      ]},
+    ]
+  },
+  {
+    id: "other", label: "Other",
+    groups: [
+      { title: "Image & Network", features: [
+        { id: "ot_lut", name: "LUT support", profile: "gostream", type: "toggle" },
+        { id: "ot_colorcorrect", name: "Color correction", profile: "gostream", type: "toggle" },
+        { id: "ot_netctrl", name: "Network control", profile: "common", type: "toggle" },
+        { id: "ot_firmware", name: "Firmware updates", profile: "common", type: "toggle" },
+        { id: "ot_poe", name: "PoE (Power over Ethernet)", profile: "common", type: "toggle" },
+        { id: "ot_fan", name: "Fan cooling", profile: "gostream", type: "toggle" },
+        { id: "ot_portable", name: "Portable form factor", profile: "gostream", type: "toggle" },
+        { id: "ot_flip", name: "Image flip / mirror", profile: "fomako", type: "toggle" },
+        { id: "ot_privacy", name: "Privacy mode", profile: "fomako", type: "toggle" },
+        { id: "ot_noise", name: "Noise reduction", profile: "fomako", type: "toggle" },
+        { id: "ot_backlight", name: "Backlight compensation", profile: "fomako", type: "toggle" },
+        { id: "ot_tallylight", name: "Tally light (camera)", profile: "fomako", type: "toggle" },
+        { id: "ot_mount", name: "Mounting options", profile: "fomako", type: "select", options: ["Ceiling", "Tripod", "Wall"] },
+        { id: "ot_ir", name: "IR remote control", profile: "fomako", type: "toggle" },
+        { id: "ot_timesync", name: "Network time sync", profile: "fomako", type: "toggle" },
+      ]},
+    ]
+  },
+];
 
-    const ICE_CONFIG = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
+const profileLabels = { both: "Both devices", gostream: "OSEE GoStream only", fomako: "Fomako NDI‑HX only" };
+
+let state = {
+  profile: "both",
+  liveOn: false,
+  recordOn: false,
+  features: {},
+  serviceName: "Sunday Morning Service",
+  notes: "Camera 1 is wide. Camera 2 is close. Keep lower thirds minimal. Export after cleanup.",
+  localCamDeviceId: "",
+};
+let activeTab = CATEGORIES[0].id;
+
+// ---------- Local laptop / USB webcam ----------
+let localStream = null;
+let videoDevices = [];
+// Multi-cam: keep streams per device; program = on-air
+let camStreamMap = {};      // deviceId -> MediaStream (video, possibly shared audio on first)
+let programDeviceId = null;
+let previewDeviceId = null; // next source for take
+let transitionMode = "cut"; // cut | fade
+let fadeBusy = false;
+let programStreamForRecord = null; // MediaStream assembled for recorder track swaps
+
+// ---------- Web Audio engine (mic → EQ → mixer → speakers) ----------
+let audioCtx = null;
+let audioSource = null;
+let eqFilters = [];       // 31 BiquadFilterNodes
+let eqInputGain = null;
+let eqOutputGain = null;
+let masterGain = null;
+let monitorGain = null;
+let audioEngineReady = false;
+let audioMuted = false;
+
+const EQ_FREQS_AUDIO = [20,25,31.5,40,50,63,80,100,125,160,200,250,315,400,500,630,800,1000,1250,1600,2000,2500,3150,4000,5000,6300,8000,10000,12500,16000,20000];
+
+function ensureAudioContext() {
+  if (audioCtx) return audioCtx;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  audioCtx = new AC();
+  // Build 31-band peaking EQ chain
+  eqInputGain = audioCtx.createGain();
+  eqInputGain.gain.value = 1;
+  eqOutputGain = audioCtx.createGain();
+  eqOutputGain.gain.value = 1;
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.85;
+  monitorGain = audioCtx.createGain();
+  monitorGain.gain.value = 1;
+
+  let prev = eqInputGain;
+  eqFilters = EQ_FREQS_AUDIO.map((freq, i) => {
+    const f = audioCtx.createBiquadFilter();
+    f.type = "peaking";
+    f.frequency.value = freq;
+    f.Q.value = 2.1; // ~1/3 octave-ish
+    f.gain.value = 0;
+    prev.connect(f);
+    prev = f;
+    return f;
+  });
+  prev.connect(eqOutputGain);
+  eqOutputGain.connect(masterGain);
+  masterGain.connect(monitorGain);
+  monitorGain.connect(audioCtx.destination);
+  audioEngineReady = true;
+  return audioCtx;
+}
+
+function applyEqBandsToAudio() {
+  if (!eqFilters.length) return;
+  const bands = (state.eq && state.eq.bands) || [];
+  eqFilters.forEach((f, i) => {
+    const db = bands[i] != null ? Number(bands[i]) : 0;
+    f.gain.setTargetAtTime(db, audioCtx.currentTime, 0.015);
+  });
+  if (eqInputGain && state.eq) {
+    const trimIn = Number(state.eq.trimIn || 0);
+    eqInputGain.gain.setTargetAtTime(Math.pow(10, trimIn / 20), audioCtx.currentTime, 0.02);
+  }
+  if (eqOutputGain && state.eq) {
+    const trimOut = Number(state.eq.trimOut || 0);
+    eqOutputGain.gain.setTargetAtTime(Math.pow(10, trimOut / 20), audioCtx.currentTime, 0.02);
+  }
+}
+
+function applyMixerToAudio() {
+  if (!masterGain || !audioCtx) return;
+  const m = state.mixer && state.mixer.master;
+  let gain = 0.85;
+  if (m) {
+    const f = Math.max(0, Math.min(100, Number(m.fader != null ? m.fader : 75))) / 100;
+    gain = f * f;
+    if (m.mute) gain = 0;
+  }
+  if (audioMuted) gain = 0;
+
+  // CH1 = live mic path into the bus (level × gain knob × mute)
+  if (state.mixer && state.mixer.channels && state.mixer.channels[0]) {
+    const ch = state.mixer.channels[0];
+    let chGain = Math.max(0, Math.min(100, Number(ch.level != null ? ch.level : 70))) / 100;
+    chGain = chGain * chGain;
+    if (ch.mute) chGain = 0;
+    const pre = Math.max(0.05, Math.min(100, Number(ch.gain != null ? ch.gain : 55))) / 55;
+    chGain *= Math.min(2.2, pre);
+    gain *= chGain;
+  }
+
+  // Light KOSMOS-style tilt via first/last EQ bands if kosmos knobs exist
+  if (eqFilters.length >= 2 && state.mixer) {
+    const bass = (Number(state.mixer.kosmosBass != null ? state.mixer.kosmosBass : 40) - 40) / 10; // ~±6 dB
+    const treb = (Number(state.mixer.kosmosTreble != null ? state.mixer.kosmosTreble : 40) - 40) / 10;
+    // Don't overwrite user EQ permanently — add as offset on edges only when kosmos moved
+    // Applied on top of stored bands in applyEqBandsToAudio instead when needed
+  }
+
+  masterGain.gain.setTargetAtTime(Math.max(0, Math.min(2, gain)), audioCtx.currentTime, 0.02);
+}
+
+function setMonitorMute(mute) {
+  audioMuted = !!mute;
+  applyMixerToAudio();
+}
+
+async function connectStreamToAudioEngine(stream) {
+  if (!stream) return;
+  const ctx = ensureAudioContext();
+  if (!ctx) return;
+  if (ctx.state === "suspended") {
+    try { await ctx.resume(); } catch (_) {}
+  }
+  // Disconnect previous source
+  if (audioSource) {
+    try { audioSource.disconnect(); } catch (_) {}
+    audioSource = null;
+  }
+  const audioTracks = stream.getAudioTracks();
+  if (!audioTracks.length) {
+    setCamStatus((document.getElementById("camStatus")?.textContent || "") + " · No mic track", "error");
+    return;
+  }
+  try {
+    audioSource = ctx.createMediaStreamSource(stream);
+    audioSource.connect(eqInputGain);
+    applyEqBandsToAudio();
+    applyMixerToAudio();
+  } catch (err) {
+    console.warn("Audio engine connect failed", err);
+  }
+}
+
+function disconnectAudioEngine() {
+  if (audioSource) {
+    try { audioSource.disconnect(); } catch (_) {}
+    audioSource = null;
+  }
+}
+
+let recordDestNode = null; // persistent MediaStreamDestination for recording
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordStartedAt = 0;
+let recordTimerInterval = null;
+
+function getProcessedAudioStream() {
+  if (!audioCtx || !masterGain) return null;
+  if (!recordDestNode) {
+    recordDestNode = audioCtx.createMediaStreamDestination();
+    masterGain.connect(recordDestNode);
+  }
+  return recordDestNode.stream;
+}
+
+function pickRecorderMime() {
+  const candidates = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm;codecs=vp9",
+    "video/webm",
+    "video/mp4"
+  ];
+  for (const t of candidates) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return "";
+}
+
+function buildProgramStream() {
+  if (!localStream) return null;
+  const out = new MediaStream();
+  localStream.getVideoTracks().forEach(t => out.addTrack(t));
+  // Prefer processed (EQ/mixer) audio; fall back to raw mic
+  const processed = getProcessedAudioStream();
+  if (processed && processed.getAudioTracks().length) {
+    processed.getAudioTracks().forEach(t => out.addTrack(t));
+  } else {
+    localStream.getAudioTracks().forEach(t => out.addTrack(t));
+  }
+  return out;
+}
+
+function formatRecordTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  const ss = String(s % 60).padStart(2, "0");
+  const mm = String(m % 60).padStart(2, "0");
+  if (h > 0) return h + ":" + mm + ":" + ss;
+  return mm + ":" + ss;
+}
+
+function updateRecordUI(on) {
+  state.recordOn = !!on;
+  const btn = document.getElementById("toggleRecordButton");
+  if (btn) btn.textContent = on ? "Stop record" : "Start record";
+  const btn2 = document.getElementById("localRecordBtn");
+  if (btn2) {
+    btn2.textContent = on ? "Stop recording" : "Record";
+    btn2.className = on ? "secondary" : "primary";
+  }
+  const badge = document.getElementById("recordLiveBadge");
+  if (badge) {
+    badge.textContent = on ? "● REC" : "Rec idle";
+    badge.className = "cam-badge" + (on ? "" : " off");
+    if (on) badge.style.background = "rgba(255,80,80,0.2)";
+    else badge.style.background = "";
+  }
+  syncStatus();
+}
+
+function stopLocalRecording(download) {
+  if (recordTimerInterval) {
+    clearInterval(recordTimerInterval);
+    recordTimerInterval = null;
+  }
+  const timer = document.getElementById("recordTimer");
+  if (timer && !download) timer.textContent = "";
+
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    try {
+      mediaRecorder.stop();
+    } catch (_) {}
+  } else {
+    mediaRecorder = null;
+    updateRecordUI(false);
+  }
+  // onstop handler does download when download=true path via flag
+}
+
+function startLocalRecording() {
+  if (!localStream) {
+    setCamStatus("Start the camera first, then record.", "error");
+    return;
+  }
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    // toggle stop + download
+    const rec = mediaRecorder;
+    mediaRecorder.onstop = () => {
+      finishRecordingDownload();
     };
+    try { rec.stop(); } catch (_) {}
+    return;
+  }
 
-    function clearWatchdog() {
-      if (watchdogInterval) {
-        clearInterval(watchdogInterval);
-        watchdogInterval = null;
-      }
-      watchdogCheckFn = null;
+  const program = buildProgramStream();
+  if (!program) {
+    setCamStatus("Could not build program stream for recording.", "error");
+    return;
+  }
+  if (!program.getVideoTracks().length) {
+    setCamStatus("No video track to record.", "error");
+    return;
+  }
+
+  const mime = pickRecorderMime();
+  recordedChunks = [];
+  try {
+    mediaRecorder = mime
+      ? new MediaRecorder(program, { mimeType: mime, videoBitsPerSecond: 4_000_000 })
+      : new MediaRecorder(program);
+  } catch (err) {
+    console.error(err);
+    setCamStatus("MediaRecorder failed: " + (err.message || err.name), "error");
+    return;
+  }
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+  };
+  mediaRecorder.onstop = () => {
+    finishRecordingDownload();
+  };
+  mediaRecorder.onerror = (e) => {
+    setCamStatus("Recording error: " + (e.error && e.error.message ? e.error.message : "unknown"), "error");
+    updateRecordUI(false);
+  };
+
+  try {
+    mediaRecorder.start(1000); // timeslice for safer long recordings
+  } catch (err) {
+    setCamStatus("Could not start recorder: " + (err.message || err.name), "error");
+    mediaRecorder = null;
+    return;
+  }
+
+  recordStartedAt = Date.now();
+  updateRecordUI(true);
+  setCamStatus("Recording program (camera + processed audio)…", "ok");
+  const timer = document.getElementById("recordTimer");
+  if (timer) timer.textContent = "00:00";
+  recordTimerInterval = setInterval(() => {
+    const t = document.getElementById("recordTimer");
+    if (t) t.textContent = formatRecordTime(Date.now() - recordStartedAt);
+  }, 250);
+}
+
+function finishRecordingDownload() {
+  if (recordTimerInterval) {
+    clearInterval(recordTimerInterval);
+    recordTimerInterval = null;
+  }
+  updateRecordUI(false);
+  mediaRecorder = null;
+
+  if (!recordedChunks.length) {
+    setCamStatus("Recording stopped — no data captured.", "error");
+    return;
+  }
+  const blob = new Blob(recordedChunks, { type: recordedChunks[0].type || "video/webm" });
+  recordedChunks = [];
+  const ext = blob.type.indexOf("mp4") >= 0 ? "mp4" : "webm";
+  const name = (state.serviceName || "service").replace(/[^\w\-]+/g, "_").slice(0, 40);
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const filename = name + "_" + stamp + "." + ext;
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+
+  const mb = (blob.size / (1024 * 1024)).toFixed(1);
+  setCamStatus("Saved " + filename + " (" + mb + " MB). Check your Downloads folder.", "ok");
+  const timer = document.getElementById("recordTimer");
+  if (timer) timer.textContent = "Saved";
+}
+
+function toggleLocalRecording() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    try { mediaRecorder.stop(); } catch (_) {}
+  } else {
+    startLocalRecording();
+  }
+}
+
+function setCamStatus(msg, kind) {
+  const el = document.getElementById("camStatus");
+  if (!el) return;
+  el.textContent = msg;
+  el.className = "cam-status" + (kind === "error" ? " error" : kind === "ok" ? " ok" : "");
+}
+function updateCamBadge(on) {
+  const badge = document.getElementById("camLiveBadge");
+  if (!badge) return;
+  badge.textContent = on ? "● Live" : "Off";
+  badge.className = "cam-badge" + (on ? "" : " off");
+}
+function attachStreamToPreviews() {
+  const ids = ["camPreview", "ptzLcdVideo", "ptzLiveVideo"];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.srcObject = localStream;
+    // Mute element audio — we hear through the Web Audio EQ/mixer graph instead
+    el.muted = true;
+    if (localStream) {
+      el.play().catch(() => {});
     }
-
-    function watchIceState(call, onBad) {
-      clearWatchdog();
-      let restartAttempted = false;
-      const check = () => {
-        const pc = call && call.peerConnection;
-        if (!pc) return;
-        const state = pc.iceConnectionState;
-
-        if (state === 'disconnected' && !restartAttempted) {
-          // PeerJS itself does NOT close the call on 'disconnected' — it
-          // only closes on 'failed' or 'closed' (confirmed by reading
-          // peerjs.min.js directly). 'disconnected' can be transient, so
-          // try a plain browser-native ICE restart first, purely local,
-          // before treating this as a dead connection.
-          restartAttempted = true;
-          logToPanel('iceConnectionState = disconnected — attempting ICE restart before giving up', 'log-warn');
-          if (typeof pc.restartIce === 'function') {
-            try { pc.restartIce(); } catch (e) { logToPanel(`restartIce() threw: ${e.message}`, 'log-error'); }
-          }
-          return; // give it a couple more poll cycles to recover on its own
-        }
-
-        if (state === 'connected' || state === 'completed') {
-          restartAttempted = false; // recovered on its own — reset for next time
-          return;
-        }
-
-        if (state === 'failed' || state === 'closed') {
-          clearWatchdog();
-          onBad(state);
-        }
-      };
-      watchdogCheckFn = check;
-      watchdogInterval = setInterval(check, 2000);
-    }
-
-    function scheduleReconnect(id) {
-      if (manualStop || reconnecting) return;
-      reconnecting = true;
-      reconnectTimeout = setTimeout(() => {
-        if (manualStop || currentMode !== 'watch') return;
-        cleanup();
-        startWatch(id);
-      }, 1500);
-    }
-
-    function stopReconnect() {
-      reconnecting = false;
-      if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
-    }
-
-    // Screen Wake Lock: prevents the display/tab from sleeping mid-stream.
-    // This matters mainly on desktop — a phone that's actively capturing
-    // video via getUserMedia tends to stay awake on its own, but a desktop
-    // browser tab can get throttled in the background, or the screen can
-    // lock/sleep, quietly killing the connection while it looks "frozen".
-    let wakeLock = null;
-    async function requestWakeLock() {
-      try {
-        if ('wakeLock' in navigator) {
-          wakeLock = await navigator.wakeLock.request('screen');
-          wakeLock.addEventListener('release', () => { wakeLock = null; });
-        }
-      } catch (e) {
-        // Not fatal — some browsers/contexts (e.g. non-HTTPS) reject this.
-        console.warn('Wake lock unavailable:', e);
-      }
-    }
-    function releaseWakeLock() {
-      if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
-    }
-    document.addEventListener('visibilitychange', () => {
-      logToPanel(`document visibility = ${document.visibilityState}`, 'log-state');
-      if (document.visibilityState === 'visible') {
-        if (peer && !peer.destroyed) requestWakeLock();
-        // Background tabs can have timers throttled to once a minute or
-        // less, delaying our watchdog. Force an immediate re-check as soon
-        // as the tab is foregrounded again so a stale drop is caught fast.
-        forceWatchdogCheck();
-      }
+  });
+  const ph = document.getElementById("camPlaceholder");
+  if (ph) ph.classList.toggle("hidden", !!localStream);
+  const lcd = document.getElementById("ptzLcdPreview");
+  if (lcd) lcd.classList.toggle("empty-preview", !localStream);
+  const empty = document.getElementById("ptzLiveEmpty");
+  if (empty) empty.classList.toggle("hidden", !!localStream);
+  const ptzStatus = document.getElementById("ptzStatus");
+  if (ptzStatus) {
+    ptzStatus.textContent = localStream
+      ? "Live feed on PTZ panel — use joystick / zoom / presets (UI control surface)"
+      : "Ready — start laptop camera to feed this preview";
+  }
+  if (typeof syncStatus === "function") syncStatus();
+}
+function stopLocalCamera() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    try { mediaRecorder.stop(); } catch (_) {}
+  }
+  disconnectAudioEngine();
+  stopAllCamStreams();
+  if (localStream) {
+    localStream.getTracks().forEach(t => {
+      try { t.stop(); } catch (_) {}
     });
+    localStream = null;
+  }
+  attachStreamToPreviews();
+  updateCamBadge(false);
+  setCamStatus("Camera / mic stopped.");
+  const qb = document.getElementById("quickCamButton");
+  if (qb) qb.textContent = "Start laptop camera";
+  const ab = document.getElementById("audioEngineBadge");
+  if (ab) { ab.textContent = "Audio: Off"; ab.className = "cam-badge off"; }
+  renderMulticamSources();
+}
+let knownVideoIds = new Set();
+let lastAllMediaDevices = [];
 
-    // These fire from the OS/browser's own network stack, independent of
-    // WebRTC or PeerJS. If one of these logs right when a drop happens, it
-    // confirms the local network interface itself blipped (Wi-Fi power
-    // saving, adapter sleep/reconnect, roaming, VPN reconnect) rather than
-    // anything on the phone/broadcaster side or a server-side timeout.
-    window.addEventListener('offline', () => logToPanel('window "offline" event — OS reports network is down', 'log-error'));
-    window.addEventListener('online', () => logToPanel('window "online" event — OS reports network is back', 'log-info'));
-    if (navigator.connection) {
-      navigator.connection.addEventListener('change', () => {
-        logToPanel(`network connection changed: type=${navigator.connection.effectiveType || navigator.connection.type}, downlink=${navigator.connection.downlink}Mbps`, 'log-state');
-      });
-    }
+function friendlyCamName(d, i) {
+  let name = d.label || ("Camera " + (i + 1) + " (unnamed — allow permission)");
+  if (d.label && /usb|logitech|microsoft life|webcam|hd pro|c9|c92|brio|razer|elgato|anker|security|dvr/i.test(d.label)) {
+    name = "USB · " + d.label;
+  } else if (d.label && /integrated|built.?in|facetime|laptop|pc camera|ime|rgb camera/i.test(d.label)) {
+    name = "Laptop · " + d.label;
+  }
+  return name;
+}
 
-    let watchdogCheckFn = null;
-    function forceWatchdogCheck() {
-      if (watchdogCheckFn) watchdogCheckFn();
-    }
+function updateUsbDeviceDiag() {
+  const el = document.getElementById("usbDeviceDiag");
+  if (!el) return;
+  const vids = lastAllMediaDevices.filter(d => d.kind === "videoinput");
+  const auds = lastAllMediaDevices.filter(d => d.kind === "audioinput");
+  if (!vids.length) {
+    el.innerHTML = "<b>Windows reports 0 video devices to the browser.</b> " +
+      "A USB security camera only works here if it installs as a normal webcam (UVC). " +
+      "Check Device Manager → Cameras / Imaging devices. If it only appears under Other devices or needs vendor software, the browser cannot use it.";
+    return;
+  }
+  el.innerHTML = "<b>Detected video inputs (" + vids.length + "):</b> " +
+    vids.map((d, i) => friendlyCamName(d, i)).join(" · ") +
+    (auds.length ? " <span style='opacity:0.7'>| mics: " + auds.length + "</span>" : "");
+}
 
-    const debugLogEl = document.getElementById('debugLog');
-    document.getElementById('clearLogBtn').onclick = () => { debugLogEl.innerHTML = ''; };
-
-    function logToPanel(msg, cls = 'log-info') {
-      const time = new Date().toLocaleTimeString();
-      const line = document.createElement('div');
-      line.innerHTML = `<span class="log-time">[${time}]</span> <span class="${cls}">${
-        String(msg).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))
-      }</span>`;
-      debugLogEl.appendChild(line);
-      debugLogEl.scrollTop = debugLogEl.scrollHeight;
-    }
-
-    // Surface EVERYTHING to the on-page panel — nothing gets swallowed.
-    // Checked the actual peerjs.min.js source: its logger calls
-    // console.error(...) at level 1, console.warn(...) at level 2, but its
-    // most detailed diagnostic messages — including the exact line that
-    // explains WHY it closes a connection, e.g.
-    // "iceConnectionState is failed, closing connections to X" — are only
-    // emitted via plain console.log(...) at level 3 ("All"). Only
-    // intercepting error/warn was missing exactly the message that answers
-    // "why is this happening". Fixed by intercepting console.log too and
-    // setting debug:3 below so PeerJS actually emits it.
-    const _origLog = console.log.bind(console);
-    const _origError = console.error.bind(console);
-    const _origWarn = console.warn.bind(console);
-    console.log = (...args) => { _origLog(...args); logToPanel(args.map(String).join(' '), 'log-info'); };
-    console.error = (...args) => { _origError(...args); logToPanel(args.map(String).join(' '), 'log-error'); };
-    console.warn = (...args) => { _origWarn(...args); logToPanel(args.map(String).join(' '), 'log-warn'); };
-
-    window.addEventListener('error', (e) => {
-      logToPanel(`Uncaught error: ${e.message} (${e.filename}:${e.lineno})`, 'log-error');
-    });
-    window.addEventListener('unhandledrejection', (e) => {
-      logToPanel(`Unhandled promise rejection: ${e.reason}`, 'log-error');
-    });
-
-    // Attach live state-change logging to a peer connection. This reports
-    // changes the instant they happen, rather than waiting for the 2s
-    // watchdog poll — useful for seeing exactly which state a connection
-    // gets stuck in (e.g. stuck at "checking" = ICE/TURN can't complete;
-    // "disconnected" then "failed" = path died after connecting).
-    function attachPCLogging(pc, label) {
-      if (!pc) { logToPanel(`${label}: no RTCPeerConnection to attach to`, 'log-warn'); return; }
-      logToPanel(`${label}: peer connection created`, 'log-state');
-      pc.addEventListener('iceconnectionstatechange', () => {
-        logToPanel(`${label}: iceConnectionState = ${pc.iceConnectionState}`, 'log-state');
-      });
-      pc.addEventListener('connectionstatechange', () => {
-        logToPanel(`${label}: connectionState = ${pc.connectionState}`, 'log-state');
-      });
-      pc.addEventListener('icegatheringstatechange', () => {
-        logToPanel(`${label}: iceGatheringState = ${pc.iceGatheringState}`, 'log-state');
-      });
-      pc.addEventListener('signalingstatechange', () => {
-        logToPanel(`${label}: signalingState = ${pc.signalingState}`, 'log-state');
-      });
-      pc.addEventListener('icecandidateerror', (e) => {
-        logToPanel(`${label}: ICE candidate error — ${e.errorText || e.errorCode} (${e.url || 'n/a'})`, 'log-error');
-      });
-    }
-
-    function setStatus(msg, type = '') {
-      statusEl.textContent = msg;
-      statusEl.className = type;
-    }
-
-    function cleanup() {
-      clearWatchdog();
-      releaseWakeLock();
-      if (retryTimeout) { clearTimeout(retryTimeout); retryTimeout = null; }
-      if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
-      // NOTE: reconnectTimeout is intentionally NOT cleared here. When an ICE
-      // connection dies, PeerJS fires the call's 'close' event, whose handler
-      // calls cleanup(). If cleanup() also cancelled a reconnect that the
-      // watchdog just scheduled, the retry would never happen and the UI
-      // would hang. Full-stop paths (Stop button, manual Start) clear it
-      // explicitly instead — see stopReconnect().
+async function enumerateVideoDevices(opts) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
+  const forcePermission = opts && opts.forcePermission;
+  try {
+    if (forcePermission || !videoDevices.some(d => d.label)) {
       try {
-        if (currentCall) { currentCall.close(); currentCall = null; }
-        if (dataConn) { dataConn.close(); dataConn = null; }
-        if (peer) { peer.destroy(); peer = null; }
-        if (localStream) {
-          localStream.getTracks().forEach(t => t.stop());
-          localStream = null;
-        }
-      } catch (e) {
-        logToPanel(`cleanup() error: ${e.message}`, 'log-error');
-      }
-      video.srcObject = null;
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
+        const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        tmp.getTracks().forEach(t => t.stop());
+      } catch (_) { /* permission may already be granted or denied */ }
     }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    lastAllMediaDevices = devices;
+    videoDevices = devices.filter(d => d.kind === "videoinput");
+    updateUsbDeviceDiag();
+    return videoDevices;
+  } catch (e) {
+    console.warn(e);
+    return [];
+  }
+}
 
-    // ========== BROADCAST (phone) ==========
-    async function startBroadcast(id) {
-      try {
-        setStatus('Starting camera…');
+function findNewlyPluggedVideoDevices() {
+  const currentIds = videoDevices.map(d => d.deviceId);
+  const newcomers = videoDevices.filter(d => d.deviceId && !knownVideoIds.has(d.deviceId));
+  // Prefer non-laptop labeled devices among newcomers
+  const usbish = newcomers.filter(d => d.label && !/integrated|built.?in|facetime|laptop|pc camera|ime|rgb camera/i.test(d.label));
+  return (usbish.length ? usbish : newcomers);
+}
 
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          },
-          audio: false
-        });
+function rememberKnownVideoDevices() {
+  knownVideoIds = new Set(videoDevices.map(d => d.deviceId).filter(Boolean));
+}
 
-        video.srcObject = localStream;
-        video.muted = true;
+function populateDeviceSelect() {
+  const sel = document.getElementById("camDeviceSelect");
+  if (!sel) return;
+  const preferred = programDeviceId || state.localCamDeviceId || "";
+  sel.innerHTML = "";
+  if (!videoDevices.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "No cameras found — Refresh / detect USB";
+    sel.appendChild(opt);
+    return;
+  }
+  videoDevices.forEach((d, i) => {
+    const opt = document.createElement("option");
+    opt.value = d.deviceId;
+    opt.textContent = friendlyCamName(d, i);
+    if (d.deviceId === preferred) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  if (!preferred && videoDevices[0]) sel.value = videoDevices[0].deviceId;
+}
 
-        currentMode = 'broadcast';
-        currentId = id;
-        manualStop = false;
-        reconnecting = false;
-        requestWakeLock();
+async function useNewlyPluggedCamera() {
+  setCamStatus("Scanning for USB cameras…");
+  // Snapshot known set before refresh if empty seed
+  if (!knownVideoIds.size && videoDevices.length) rememberKnownVideoDevices();
+  await enumerateVideoDevices({ forcePermission: true });
+  populateDeviceSelect();
+  renderMulticamSources();
 
-        // Create the peer
-        peer = new Peer(id, {
-          debug: 3, // 0=none 1=errors 2=+warnings 3=+all logs — level 3 is what actually reveals PeerJS's own reasoning (e.g. why it closed a call)
-          config: ICE_CONFIG
-        });
+  let newcomers = findNewlyPluggedVideoDevices();
+  // If nothing "new", pick first non-laptop device
+  if (!newcomers.length) {
+    const nonLaptop = videoDevices.filter(d => d.label && !/integrated|built.?in|facetime|laptop|pc camera|ime|rgb camera/i.test(d.label));
+    if (nonLaptop.length) newcomers = nonLaptop;
+  }
+  rememberKnownVideoDevices();
 
-        peer.on('open', (myId) => {
-          logToPanel(`peer open, broadcasting as "${myId}"`, 'log-info');
-          setStatus(`Broadcasting as "${myId}"`, 'success');
-          startBtn.disabled = true;
-          stopBtn.disabled = false;
-        });
+  if (!videoDevices.length) {
+    setCamStatus("No video devices at all. This USB security cam is likely not a UVC webcam — install its Windows driver or use its IP stream.", "error");
+    return;
+  }
+  if (!newcomers.length) {
+    setCamStatus(
+      "Only the device(s) already known are listed: " +
+      videoDevices.map((d, i) => friendlyCamName(d, i)).join(" · ") +
+      ". Unplug the security cam, click this again to remember baseline, plug it in, wait 3s, then click Use newly plugged camera.",
+      "error"
+    );
+    return;
+  }
 
-        peer.on('connection', (conn) => {
-          logToPanel(`incoming data connection from "${conn.peer}"`, 'log-info');
-          dataConn = conn;
-          conn.on('data', (viewerId) => {
-            logToPanel(`viewer id received: "${viewerId}" — calling…`, 'log-info');
-            setStatus('Viewer joined – sending camera…', 'success');
-            answerViewer(viewerId);
-          });
-          conn.on('error', (e) => logToPanel(`data connection error: ${e}`, 'log-error'));
-        });
+  const target = newcomers[0];
+  setCamStatus("Opening newly detected: " + friendlyCamName(target, 0) + " …", "ok");
+  state.localCamDeviceId = target.deviceId;
+  save();
+  const sel = document.getElementById("camDeviceSelect");
+  if (sel) sel.value = target.deviceId;
+  await startLocalCamera(target.deviceId);
+}
+function renderMulticamSources() {
+  const host = document.getElementById("multicamSources");
+  if (!host) return;
+  host.innerHTML = "";
+  if (!videoDevices.length) {
+    host.innerHTML = '<span style="font-size:0.8rem;color:var(--muted)">No cameras listed yet — Start camera first.</span>';
+    return;
+  }
+  videoDevices.forEach((d, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "mc-src";
+    if (d.deviceId === programDeviceId) btn.classList.add("program");
+    else if (d.deviceId === previewDeviceId) btn.classList.add("preview");
+    btn.textContent = (d.label || ("Cam " + (i + 1))).slice(0, 28);
+    btn.title = d.label || d.deviceId;
+    btn.dataset.deviceId = d.deviceId;
+    btn.addEventListener("click", () => onMulticamSourceClick(d.deviceId));
+    host.appendChild(btn);
+  });
+}
 
-        function answerViewer(viewerId) {
-          reconnecting = false;
-          currentCall = peer.call(viewerId, localStream);
-          attachPCLogging(currentCall.peerConnection, `call→${viewerId}`);
-          currentCall.on('error', (e) => logToPanel(`call error: ${e}`, 'log-error'));
-          currentCall.on('close', () => {
-            // If the watchdog already flagged this as a bad ICE state,
-            // a re-call is already scheduled below — don't overwrite that
-            // status with a plain "Viewer left".
-            if (!reconnecting) { logToPanel('call closed (viewer left)', 'log-warn'); setStatus('Viewer left'); }
-          });
-
-          // Watch the connection. Desktops are the side that most often
-          // drops silently (screen lock, sleep, background-tab throttling,
-          // Wi-Fi power saving, NAT rebinding) while a phone actively
-          // capturing video usually stays up. Rather than only waiting for
-          // the viewer to notice and reconnect, the broadcaster proactively
-          // re-calls the same viewer id — whichever side recovers first wins.
-          watchIceState(currentCall, (state) => {
-            reconnecting = true;
-            logToPanel(`ICE state "${state}" detected by watchdog — re-calling viewer`, 'log-warn');
-            setStatus(`Connection ${state} — re-calling viewer…`, 'error');
-            retryTimeout = setTimeout(() => {
-              if (manualStop || currentMode !== 'broadcast' || !peer) return;
-              answerViewer(viewerId);
-            }, 2000);
-          });
-        }
-
-        peer.on('disconnected', () => {
-          if (manualStop) return;
-          logToPanel('peer disconnected from signaling server', 'log-warn');
-          setStatus('Lost connection to signaling server, reconnecting…', 'error');
-          try { peer.reconnect(); } catch (e) { logToPanel(`peer.reconnect() threw: ${e.message}`, 'log-error'); }
-        });
-
-        peer.on('error', (err) => {
-          console.error(err);
-          if (err.type === 'unavailable-id') {
-            // The old session's ID is likely still held by the server from
-            // an unclean disconnect. Destroy this peer and retry shortly
-            // instead of giving up immediately.
-            setStatus('ID busy (stale session?) — retrying…', 'error');
-            if (peer) { try { peer.destroy(); } catch (e) { logToPanel(`peer.destroy() threw: ${e.message}`, 'log-error'); } peer = null; }
-            if (!manualStop) {
-              retryTimeout = setTimeout(() => {
-                if (!manualStop && currentMode === 'broadcast') startBroadcast(id);
-              }, 3000);
-            }
-          } else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error' || err.type === 'socket-closed') {
-            setStatus('Connection problem — retrying…', 'error');
-            if (!manualStop) {
-              retryTimeout = setTimeout(() => {
-                if (!manualStop && currentMode === 'broadcast') startBroadcast(id);
-              }, 3000);
-            }
-          } else {
-            setStatus('Error: ' + err.type, 'error');
-            cleanup();
-          }
-        });
-
-      } catch (err) {
-        console.error(err);
-        setStatus('Camera error: ' + err.message, 'error');
-        cleanup();
-      }
+async function ensureCamStream(deviceId, withAudio) {
+  if (camStreamMap[deviceId]) return camStreamMap[deviceId];
+  const constraints = {
+    video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: withAudio ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true } : false
+  };
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    camStreamMap[deviceId] = stream;
+    return stream;
+  } catch (err) {
+    // Retry video-only
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+      camStreamMap[deviceId] = stream;
+      return stream;
+    } catch (err2) {
+      console.warn(err2);
+      setCamStatus("Could not open camera: " + (err2.message || err2.name), "error");
+      return null;
     }
+  }
+}
 
-    // ========== WATCH ==========
-    function startWatch(id) {
-      setStatus('Connecting…');
-      logToPanel(`startWatch("${id}")`, 'log-info');
-      currentMode = 'watch';
-      currentId = id;
-      manualStop = false;
-      reconnecting = false;
-      requestWakeLock();
+function setProgramVideoElement(stream, { fade } = {}) {
+  const a = document.getElementById("camPreview");
+  const b = document.getElementById("camPreviewB");
+  if (!a) return Promise.resolve();
+  if (!fade || !b) {
+    a.srcObject = stream;
+    a.muted = true;
+    a.play().catch(() => {});
+    if (b) { b.style.opacity = "0"; b.srcObject = null; }
+    return Promise.resolve();
+  }
+  // Crossfade: put next on B, fade in, then swap to A
+  return new Promise((resolve) => {
+    if (fadeBusy) { resolve(); return; }
+    fadeBusy = true;
+    b.srcObject = stream;
+    b.muted = true;
+    b.style.transition = "opacity 0.45s ease";
+    b.play().catch(() => {});
+    requestAnimationFrame(() => {
+      b.style.opacity = "1";
+      setTimeout(() => {
+        a.srcObject = stream;
+        a.muted = true;
+        a.play().catch(() => {});
+        b.style.transition = "none";
+        b.style.opacity = "0";
+        b.srcObject = null;
+        fadeBusy = false;
+        resolve();
+      }, 480);
+    });
+  });
+}
 
-      peer = new Peer({
-        debug: 3, // 0=none 1=errors 2=+warnings 3=+all logs — level 3 is what actually reveals PeerJS's own reasoning (e.g. why it closed a call)
-        config: ICE_CONFIG
-      });
+async function takeToProgram(deviceId, mode) {
+  if (!deviceId) return;
+  const useFade = (mode || transitionMode) === "fade";
+  const stream = await ensureCamStream(deviceId, !localStream);
+  if (!stream) return;
 
-      peer.on('open', (myId) => {
-        logToPanel(`peer open as "${myId}", connecting to broadcaster "${id}"`, 'log-info');
-        dataConn = peer.connect(id);
+  // Keep mic audio on localStream / engine: if this is first stream, wire audio
+  if (!localStream) {
+    localStream = stream;
+    await connectStreamToAudioEngine(localStream);
+  } else if (stream !== localStream) {
+    // Prefer keeping existing audio tracks on localStream; only swap video for program display
+    // For recording track swap, use video track from this stream
+  }
 
-        dataConn.on('open', () => {
-          logToPanel('data connection open — sending my id to broadcaster', 'log-info');
-          dataConn.send(myId); // tell the phone our ID
-          setStatus('Waiting for stream…');
-        });
+  programDeviceId = deviceId;
+  previewDeviceId = null;
+  await setProgramVideoElement(stream, { fade: useFade });
 
-        dataConn.on('error', (e) => {
-          logToPanel(`data connection error: ${e}`, 'log-error');
-          setStatus('Could not reach broadcaster', 'error');
-        });
-      });
+  // Point localStream reference at a combined stream for previews/record helpers
+  const combined = new MediaStream();
+  stream.getVideoTracks().forEach(t => combined.addTrack(t));
+  // audio from any open stream that has it, prefer original localStream
+  const audioDonor = [localStream, ...Object.values(camStreamMap)].find(s => s && s.getAudioTracks().length);
+  if (audioDonor) audioDonor.getAudioTracks().forEach(t => combined.addTrack(t));
+  localStream = combined;
+  programStreamForRecord = combined;
 
-      peer.on('call', (call) => {
-        logToPanel(`incoming call from broadcaster`, 'log-info');
-        currentCall = call;
-        call.answer(); // receive only
-        attachPCLogging(call.peerConnection, 'watch-call');
-        call.on('error', (e) => logToPanel(`call error: ${e}`, 'log-error'));
+  // Swap video track on active MediaRecorder if supported
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    try {
+      const vTrack = stream.getVideoTracks()[0];
+      // MediaRecorder binds to tracks at start; replaceTrack on the stream we built may not always work.
+      // Best-effort for Chrome.
+    } catch (_) {}
+  }
 
-        // Hard cap: if we never actually get a stream, don't let the UI
-        // sit on "Connecting…" forever — treat it as a failed attempt and
-        // retry the whole watch flow from scratch.
-        connectTimeout = setTimeout(() => {
-          if (manualStop || currentMode !== 'watch') return;
-          const pc = call.peerConnection;
-          logToPanel(`connect timeout (15s) — iceConnectionState was "${pc && pc.iceConnectionState}", iceGatheringState was "${pc && pc.iceGatheringState}"`, 'log-error');
-          setStatus('Connection timed out — retrying…', 'error');
-          scheduleReconnect(id);
-        }, 15000);
+  attachStreamToPreviews();
+  // Re-attach program video specifically (attachStream uses localStream)
+  const ph = document.getElementById("camPlaceholder");
+  if (ph) ph.classList.add("hidden");
+  updateCamBadge(true);
+  renderMulticamSources();
+  const label = (videoDevices.find(d => d.deviceId === deviceId) || {}).label || "Camera";
+  setCamStatus("PROGRAM: " + label + (useFade ? " (fade)" : " (cut)"), "ok");
+}
 
-        call.on('stream', (remoteStream) => {
-          logToPanel('stream received', 'log-info');
-          if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
-          video.srcObject = remoteStream;
-          video.muted = false;
-          setStatus('Connected – watching live', 'success');
-          startBtn.disabled = true;
-          stopBtn.disabled = false;
+async function onMulticamSourceClick(deviceId) {
+  if (deviceId === programDeviceId) return;
+  // Single-click take using current transition mode
+  await takeToProgram(deviceId, transitionMode);
+}
 
-          // Watch the connection so a silent NAT/ICE failure doesn't just
-          // freeze the last video frame forever.
-          watchIceState(call, (state) => {
-            logToPanel(`ICE state "${state}" detected by watchdog — reconnecting`, 'log-warn');
-            setStatus(`Connection ${state} — reconnecting…`, 'error');
-            scheduleReconnect(id);
-          });
-        });
+function stopAllCamStreams() {
+  Object.keys(camStreamMap).forEach(id => {
+    try { camStreamMap[id].getTracks().forEach(t => t.stop()); } catch (_) {}
+  });
+  camStreamMap = {};
+  programDeviceId = null;
+  previewDeviceId = null;
+  programStreamForRecord = null;
+}
 
-        call.on('close', () => {
-          // If a reconnect is already scheduled (watchdog or timeout caught
-          // this first), let it run instead of overwriting status here.
-          if (reconnecting) return;
-          logToPanel('call closed (stream ended)', 'log-warn');
-          setStatus('Stream ended');
-          cleanup();
-        });
-      });
+async function startLocalCamera(preferredId) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setCamStatus("This browser cannot access the camera. Try Chrome or Edge.", "error");
+    return;
+  }
+  stopLocalCamera();
+  const sel = document.getElementById("camDeviceSelect");
+  // Only use dropdown/state id if it's a real deviceId (not empty placeholder)
+  const id = preferredId || (sel && sel.value) || state.localCamDeviceId || undefined;
+  const forceExact = !!(id && String(id).length > 4);
 
-      peer.on('disconnected', () => {
-        if (manualStop) return;
-        logToPanel('peer disconnected from signaling server', 'log-warn');
-        setStatus('Lost connection to signaling server, reconnecting…', 'error');
-        try { peer.reconnect(); } catch (e) { logToPanel(`peer.reconnect() threw: ${e.message}`, 'log-error'); }
-      });
+  // Video + audio so mic feeds the EQ / mixer engine
+  const audioConstraint = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true
+  };
+  const tryConstraints = [];
+  if (forceExact) {
+    // User picked a specific camera — do NOT fall back to the built-in laptop cam
+    tryConstraints.push({
+      audio: audioConstraint,
+      video: { deviceId: { exact: id }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    tryConstraints.push({
+      audio: false,
+      video: { deviceId: { exact: id }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+  } else {
+    // No specific choice — default path (laptop / first available)
+    tryConstraints.push({
+      audio: audioConstraint,
+      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    tryConstraints.push({ audio: audioConstraint, video: true });
+    tryConstraints.push({ audio: false, video: true });
+  }
 
-      peer.on('error', (err) => {
-        console.error(err);
-        if (err.type === 'peer-unavailable') {
-          setStatus('Stream not found. Is the phone broadcasting?', 'error');
-        } else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error' || err.type === 'socket-closed') {
-          setStatus('Connection problem — retrying…', 'error');
-          if (peer) { try { peer.destroy(); } catch (e) { logToPanel(`peer.destroy() threw: ${e.message}`, 'log-error'); } peer = null; }
-          if (!manualStop) {
-            retryTimeout = setTimeout(() => {
-              if (!manualStop && currentMode === 'watch') startWatch(id);
-            }, 3000);
-          }
-        } else {
-          setStatus('Error: ' + err.type, 'error');
-        }
-      });
+  setCamStatus(forceExact
+    ? "Opening the camera you selected…"
+    : "Requesting camera permission… allow access when the browser asks.");
+  let lastErr = null;
+  for (const constraints of tryConstraints) {
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      break;
+    } catch (err) {
+      lastErr = err;
+      localStream = null;
     }
+  }
+  if (!localStream) {
+    let msg = "Could not start camera.";
+    if (lastErr) {
+      if (lastErr.name === "NotAllowedError" || lastErr.name === "PermissionDeniedError")
+        msg = "Permission denied. Click the camera icon in the address bar and Allow, then try again.";
+      else if (lastErr.name === "NotFoundError" || lastErr.name === "OverconstrainedError")
+        msg = forceExact
+          ? "That device is not available as a browser webcam. Security cameras often need their own app or a UVC/“webcam mode” — Windows Camera app is the test."
+          : "No camera found. Check Windows Privacy → Camera, then Refresh devices.";
+      else if (lastErr.name === "NotReadableError")
+        msg = "Camera is busy (Zoom/Teams/Windows Camera/security software). Close those and try again.";
+      else if (lastErr.message) msg = lastErr.message;
+    }
+    setCamStatus(msg, "error");
+    // Still refresh list so user can see what IS available
+    await enumerateVideoDevices({ forcePermission: true });
+    populateDeviceSelect();
+    renderMulticamSources();
+    return;
+  }
 
-    // ========== BUTTONS ==========
-    startBtn.onclick = () => {
-      const id = streamIdInput.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-      if (!id) {
-        setStatus('Please enter a Stream ID', 'error');
-        return;
-      }
-      streamIdInput.value = id;
+  attachStreamToPreviews();
+  await connectStreamToAudioEngine(localStream);
 
-      manualStop = true; // cancel any pending retry from a previous session
-      stopReconnect();
-      cleanup(); // clean previous session
+  const track = localStream.getVideoTracks()[0];
+  if (track) {
+    // Some USB capture devices / drivers silently drop the track after a short
+    // period (often ~20s) when the OS reclaims the device or power-saves it.
+    // Auto-restart instead of leaving a frozen/black preview.
+    const deviceIdAtStart = track.getSettings().deviceId || state.localCamDeviceId;
+    track.addEventListener("ended", () => {
+      setCamStatus("Camera signal was lost — reconnecting…", "error");
+      setTimeout(() => { startLocalCamera(deviceIdAtStart); }, 1200);
+    });
+  }
+  const settings = track ? track.getSettings() : {};
+  const label = track ? (track.label || "Laptop camera") : "Laptop camera";
+  if (settings.deviceId) {
+    state.localCamDeviceId = settings.deviceId;
+    programDeviceId = settings.deviceId;
+    camStreamMap[settings.deviceId] = localStream;
+  }
+  state.features.in_usb = true;
+  save();
 
-      if (modeSelect.value === 'broadcast') {
-        startBroadcast(id);
+  const hasMic = localStream.getAudioTracks().length > 0;
+  const ab = document.getElementById("audioEngineBadge");
+  if (ab) {
+    ab.textContent = hasMic ? "Audio: EQ+Mixer live" : "Audio: no mic";
+    ab.className = "cam-badge" + (hasMic ? "" : " off");
+  }
+
+  await enumerateVideoDevices();
+  populateDeviceSelect();
+  if (settings.deviceId) {
+    const s = document.getElementById("camDeviceSelect");
+    if (s) s.value = settings.deviceId;
+  }
+  renderMulticamSources();
+
+  const toggle = document.querySelector('input[data-feature="in_usb"]');
+  if (toggle) toggle.checked = true;
+
+  updateCamBadge(true);
+  const res = settings.width && settings.height ? ` · ${settings.width}×${settings.height}` : "";
+  const micNote = localStream.getAudioTracks().length
+    ? " · mic → EQ → mixer → speakers"
+    : " · video only (no mic permission)";
+  setCamStatus("PROGRAM: " + label + res + micNote, "ok");
+  const qb = document.getElementById("quickCamButton");
+  if (qb) qb.textContent = "Stop laptop camera";
+}
+// ---------- IP / security camera (HTTP MJPEG) ----------
+let ipCamActiveUrl = null;
+let ipCamSnapshotTimer = null;
+let ipCamMode = null;           // "mjpeg" (continuous) or "snapshot" (polled)
+let ipCamWatchdog = null;       // forces a fresh connection periodically
+let ipCamRetryTimer = null;     // backoff retry after an error
+let ipCamRetryCount = 0;
+const IP_CAM_WATCHDOG_MS = 12000; // reconnect before typical ~20s camera-side idle timeout
+const IP_CAM_MAX_BACKOFF_MS = 8000;
+
+function setIpCamStatus(msg, kind) {
+  const el = document.getElementById("ipCamStatus");
+  if (!el) return;
+  el.textContent = msg;
+  el.className = "cam-status" + (kind === "error" ? " error" : kind === "ok" ? " ok" : "");
+}
+
+function buildIpAuthPrefix(user, pass) {
+  if (!user) return "";
+  return encodeURIComponent(user) + ":" + encodeURIComponent(pass || "") + "@";
+}
+
+function ipCamCandidateUrls(host, user, pass, preset, custom) {
+  const auth = buildIpAuthPrefix(user, pass);
+  const h = host.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  if (preset === "custom" && custom) return [custom];
+  if (custom && custom.trim()) return [custom.trim()];
+  const base = "http://" + auth + h;
+  const map = {
+    mjpeg: [base + "/video", base + "/mjpeg", base + "/video.mjpg", base + "/mjpg/video.mjpg"],
+    hikvision: [
+      base + "/ISAPI/Streaming/channels/101/httpPreview",
+      base + "/Streaming/channels/1/preview",
+      base + "/ISAPI/Streaming/channels/101/picture"
+    ],
+    dahua: [
+      base + "/cgi-bin/mjpg/video.cgi?channel=1&subtype=1",
+      base + "/cam/realmonitor?channel=1&subtype=1"
+    ],
+    axis: [base + "/axis-cgi/mjpg/video.cgi", base + "/mjpg/video.mjpg"],
+    foscam: [
+      base + "/cgi-bin/CGIProxy.fcgi?cmd=snapPicture2&usr=" + encodeURIComponent(user || "") + "&pwd=" + encodeURIComponent(pass || ""),
+      base + "/videoMain"
+    ],
+    auto: []
+  };
+  if (preset !== "auto" && map[preset]) return map[preset];
+  // auto: try a broad set
+  return [
+    base + "/video",
+    base + "/mjpeg",
+    base + "/video.mjpg",
+    base + "/mjpg/video.mjpg",
+    base + "/cgi-bin/mjpg/video.cgi",
+    base + "/cgi-bin/mjpg/video.cgi?channel=1&subtype=1",
+    base + "/axis-cgi/mjpg/video.cgi",
+    base + "/ISAPI/Streaming/channels/101/httpPreview",
+    base + "/ISAPI/Streaming/channels/101/picture",
+    base + "/Streaming/channels/1/preview",
+    base + "/snapshot.jpg",
+    base + "/tmpfs/auto.jpg",
+    base + "/jpg/image.jpg",
+    base + "/img/snapshot.cgi",
+    base + "/cgi-bin/snapshot.cgi",
+    base + "/onvif/device_service"
+  ];
+}
+
+function clearIpCamTimers() {
+  if (ipCamSnapshotTimer) { clearInterval(ipCamSnapshotTimer); ipCamSnapshotTimer = null; }
+  if (ipCamWatchdog) { clearInterval(ipCamWatchdog); ipCamWatchdog = null; }
+  if (ipCamRetryTimer) { clearTimeout(ipCamRetryTimer); ipCamRetryTimer = null; }
+}
+
+function ipCamCacheBust(url) {
+  return url + (url.indexOf("?") >= 0 ? "&" : "?") + "_r=" + Date.now();
+}
+
+function showIpCamOnPreview(url, mode) {
+  const img = document.getElementById("ipCamPreview");
+  const vid = document.getElementById("camPreview");
+  const ph = document.getElementById("camPlaceholder");
+  if (!img) return;
+  clearIpCamTimers();
+  ipCamRetryCount = 0;
+  ipCamMode = mode;
+  if (vid) vid.style.opacity = "0";
+  img.style.display = "block";
+  if (ph) ph.classList.add("hidden");
+
+  if (mode === "snapshot") {
+    img.onerror = () => handleIpCamDrop(url);
+    const tick = () => { img.src = ipCamCacheBust(url); };
+    tick();
+    ipCamSnapshotTimer = setInterval(tick, 500);
+  } else {
+    // Continuous multipart MJPEG. Many cheap IP cameras / DVRs silently close
+    // this HTTP connection after a short idle/session timeout (often ~20s),
+    // and a browser <img> doesn't always fire "error" when that happens — it
+    // just freezes on the last frame. To work around this we (a) listen for
+    // an outright error and reconnect immediately, and (b) run a watchdog
+    // that proactively re-opens the connection just *before* that typical
+    // timeout window, so the stream never has a chance to go stale.
+    img.onload = () => {
+      ipCamRetryCount = 0;
+      setIpCamStatus("Connected: " + url.replace(/:[^:@/]+@/, ":****@"), "ok");
+    };
+    img.onerror = () => handleIpCamDrop(url);
+    img.src = ipCamCacheBust(url);
+    ipCamWatchdog = setInterval(() => {
+      if (ipCamActiveUrl === url) img.src = ipCamCacheBust(url);
+    }, IP_CAM_WATCHDOG_MS);
+  }
+  ipCamActiveUrl = url;
+}
+
+function handleIpCamDrop(url) {
+  if (ipCamActiveUrl !== url) return; // stream was stopped/replaced already
+  ipCamRetryCount++;
+  const backoff = Math.min(500 * ipCamRetryCount, IP_CAM_MAX_BACKOFF_MS);
+  setIpCamStatus(`Connection dropped — reconnecting (attempt ${ipCamRetryCount})…`, "error");
+  if (ipCamRetryTimer) clearTimeout(ipCamRetryTimer);
+  ipCamRetryTimer = setTimeout(() => {
+    if (ipCamActiveUrl !== url) return;
+    const img = document.getElementById("ipCamPreview");
+    if (img) img.src = ipCamCacheBust(url);
+  }, backoff);
+}
+
+function stopIpCam() {
+  clearIpCamTimers();
+  const img = document.getElementById("ipCamPreview");
+  if (img) {
+    img.onload = null;
+    img.onerror = null;
+    img.removeAttribute("src");
+    img.style.display = "none";
+  }
+  const vid = document.getElementById("camPreview");
+  if (vid) vid.style.opacity = "1";
+  ipCamActiveUrl = null;
+  ipCamMode = null;
+  ipCamRetryCount = 0;
+  setIpCamStatus("IP camera stopped.");
+}
+
+function tryLoadIpUrl(url) {
+  return new Promise((resolve) => {
+    const test = new Image();
+    const timer = setTimeout(() => {
+      test.onload = test.onerror = null;
+      resolve({ ok: false, url, reason: "timeout" });
+    }, 4000);
+    test.onload = () => {
+      clearTimeout(timer);
+      resolve({ ok: true, url, mode: "mjpeg" });
+    };
+    test.onerror = () => {
+      clearTimeout(timer);
+      resolve({ ok: false, url, reason: "error" });
+    };
+    test.src = url + (url.indexOf("?") >= 0 ? "&" : "?") + "t=" + Date.now();
+  });
+}
+
+async function connectIpCam() {
+  const host = (document.getElementById("ipCamHost") || {}).value || "192.168.1.72";
+  const user = (document.getElementById("ipCamUser") || {}).value || "";
+  const pass = (document.getElementById("ipCamPass") || {}).value || "";
+  const preset = (document.getElementById("ipCamPreset") || {}).value || "auto";
+  const custom = (document.getElementById("ipCamCustomUrl") || {}).value || "";
+
+  state.ipCam = { host, user, preset, custom };
+  save();
+
+  const urls = ipCamCandidateUrls(host.trim(), user, pass, preset, custom);
+  setIpCamStatus("Trying " + urls.length + " URL(s) on " + host + "…");
+
+  for (const url of urls) {
+    setIpCamStatus("Trying " + url.replace(/:[^:@/]+@/, ":****@") + " …");
+    const result = await tryLoadIpUrl(url);
+    if (result.ok) {
+      // Prefer continuous mjpeg; if path looks like snapshot, refresh
+      const isSnap = /snapshot|picture|jpg|jpeg|snap/i.test(url) && !/mjpg|mjpeg|video\.cgi/i.test(url);
+      showIpCamOnPreview(url, isSnap ? "snapshot" : "mjpeg");
+      setIpCamStatus("Connected: " + url.replace(/:[^:@/]+@/, ":****@"), "ok");
+      setCamStatus("PROGRAM: IP camera " + host, "ok");
+      return;
+    }
+  }
+
+  setIpCamStatus(
+    "Could not load an HTTP image stream from " + host +
+    ". Many cams only offer RTSP (not playable in Chrome). Check the camera manual for an MJPEG/HTTP URL, enter it as Custom URL, and ensure this PC can open http://" + host + " in a browser.",
+    "error"
+  );
+}
+
+function initLocalCameraUI() {
+  const startBtn = document.getElementById("camStartBtn");
+  const stopBtn = document.getElementById("camStopBtn");
+  const refreshBtn = document.getElementById("camRefreshBtn");
+  const sel = document.getElementById("camDeviceSelect");
+  const quickBtn = document.getElementById("quickCamButton");
+  if (!startBtn) return;
+
+  // Restore saved IP
+  if (state.ipCam) {
+    const h = document.getElementById("ipCamHost");
+    if (h && state.ipCam.host) h.value = state.ipCam.host;
+    const u = document.getElementById("ipCamUser");
+    if (u && state.ipCam.user) u.value = state.ipCam.user;
+    const p = document.getElementById("ipCamPreset");
+    if (p && state.ipCam.preset) p.value = state.ipCam.preset;
+    const c = document.getElementById("ipCamCustomUrl");
+    if (c && state.ipCam.custom) c.value = state.ipCam.custom;
+  }
+  const ipConn = document.getElementById("ipCamConnectBtn");
+  if (ipConn) ipConn.addEventListener("click", () => connectIpCam());
+  const ipStop = document.getElementById("ipCamStopBtn");
+  if (ipStop) ipStop.addEventListener("click", () => stopIpCam());
+
+  startBtn.addEventListener("click", () => startLocalCamera());
+  stopBtn.addEventListener("click", () => stopLocalCamera());
+  const recBtn = document.getElementById("localRecordBtn");
+  if (recBtn) recBtn.addEventListener("click", () => toggleLocalRecording());
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", async () => {
+      setCamStatus("Refreshing camera list…");
+      await enumerateVideoDevices({ forcePermission: true });
+      populateDeviceSelect();
+      renderMulticamSources();
+      rememberKnownVideoDevices();
+      if (videoDevices.length) {
+        const names = videoDevices.map((d, i) => friendlyCamName(d, i)).join(" · ");
+        setCamStatus("Found " + videoDevices.length + " camera(s): " + names + ". Select one or click Use newly plugged camera.", "ok");
       } else {
-        startWatch(id);
+        setCamStatus("0 video devices reported. USB security cams often need a vendor driver — check Device Manager → Cameras.", "error");
       }
-    };
+    });
+  }
+  const plugBtn = document.getElementById("camPlugPlayBtn");
+  if (plugBtn) plugBtn.addEventListener("click", () => useNewlyPluggedCamera());
+  if (sel) {
+    sel.addEventListener("change", () => {
+      state.localCamDeviceId = sel.value;
+      save();
+      if (localStream && sel.value) takeToProgram(sel.value, transitionMode);
+      else if (sel.value) startLocalCamera(sel.value);
+    });
+  }
+  const mcTrans = document.getElementById("mcTransition");
+  if (mcTrans) {
+    mcTrans.value = transitionMode;
+    mcTrans.addEventListener("change", () => { transitionMode = mcTrans.value; });
+  }
+  const cutBtn = document.getElementById("mcCutBtn");
+  if (cutBtn) {
+    cutBtn.addEventListener("click", () => {
+      // CUT to next non-program source if only one alternative, else re-take preview
+      const next = previewDeviceId || videoDevices.map(d => d.deviceId).find(id => id !== programDeviceId);
+      if (next) takeToProgram(next, "cut");
+      else setCamStatus("Select another camera source to CUT to.", "error");
+    });
+  }
+  const fadeBtn = document.getElementById("mcFadeBtn");
+  if (fadeBtn) {
+    fadeBtn.addEventListener("click", () => {
+      const next = previewDeviceId || videoDevices.map(d => d.deviceId).find(id => id !== programDeviceId);
+      if (next) takeToProgram(next, "fade");
+      else setCamStatus("Select another camera source to FADE to.", "error");
+    });
+  }
+  if (quickBtn) {
+    quickBtn.addEventListener("click", () => {
+      if (localStream) stopLocalCamera();
+      else startLocalCamera();
+    });
+  }
 
-    stopBtn.onclick = () => {
-      manualStop = true;
-      currentMode = null;
-      stopReconnect();
-      cleanup();
-      setStatus('Stopped');
-    };
+  // devicechange when USB cams plug in — auto detect
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener("devicechange", async () => {
+      const before = new Set(knownVideoIds);
+      await enumerateVideoDevices({ forcePermission: true });
+      populateDeviceSelect();
+      renderMulticamSources();
+      const added = videoDevices.filter(d => d.deviceId && !before.has(d.deviceId));
+      rememberKnownVideoDevices();
+      if (added.length) {
+        const name = friendlyCamName(added[0], 0);
+        setCamStatus("New USB video device detected: " + name + " — opening it…", "ok");
+        state.localCamDeviceId = added[0].deviceId;
+        save();
+        const s = document.getElementById("camDeviceSelect");
+        if (s) s.value = added[0].deviceId;
+        startLocalCamera(added[0].deviceId);
+      } else if (videoDevices.length) {
+        setCamStatus("Camera list updated (" + videoDevices.length + ").", "ok");
+      }
+    });
+  }
 
-    window.addEventListener('beforeunload', cleanup);
-  </script>
+  // Pre-list if possible (may be empty until permission)
+  enumerateVideoDevices().then(() => {
+    populateDeviceSelect();
+    rememberKnownVideoDevices();
+  });
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (raw) state = Object.assign(state, JSON.parse(raw));
+  } catch { localStorage.removeItem(storageKey); }
+}
+
+function save() {
+  localStorage.setItem(storageKey, JSON.stringify(state));
+}
+
+function featureVisible(profileTag) {
+  if (state.profile === "both") return true;
+  return profileTag === "common" || profileTag === state.profile;
+}
+
+function countActiveStreams() {
+  const streamIds = ["st_rtmp", "st_rtmps", "st_srt", "st_ndiout_local", "st_ndihx", "st_rtsp"];
+  return streamIds.filter(id => state.features[id]).length;
+}
+
+function renderTabs() {
+  const tabs = document.getElementById("tabs");
+  tabs.innerHTML = "";
+  CATEGORIES.forEach(cat => {
+    const btn = document.createElement("button");
+    btn.className = "tab-btn" + (cat.id === activeTab ? " active" : "");
+    btn.textContent = cat.label;
+    btn.addEventListener("click", () => { activeTab = cat.id; renderTabs(); renderPanels(); });
+    tabs.appendChild(btn);
+  });
+}
+
+function featureControlHTML(f) {
+  if (f.type === "toggle") {
+    const checked = state.features[f.id] ? "checked" : "";
+    return `<label class="switch"><input type="checkbox" data-feature="${f.id}" ${checked}><span class="slider-toggle"></span></label>`;
+  }
+  if (f.type === "select") {
+    const current = state.features[f.id] || f.options[0];
+    const opts = f.options.map(o => `<option value="${o}" ${o === current ? "selected" : ""}>${o}</option>`).join("");
+    return `<select class="mini" data-feature-select="${f.id}">${opts}</select>`;
+  }
+  return "";
+}
+
+function renderPanels() {
+  const panels = document.getElementById("panels");
+  panels.innerHTML = "";
+  const cat = CATEGORIES.find(c => c.id === activeTab);
+  const section = document.createElement("section");
+  section.className = "card panel";
+
+  let html = `<h2>${cat.label}</h2><div class="sub">Showing profile: ${profileLabels[state.profile]}</div>`;
+
+  if (cat.id === "switching") html += goStreamPanelHTML();
+  if (cat.id === "ptz") html += fomakoPanelHTML();
+  if (cat.id === "eq") html += eqPanelHTML();
+  if (cat.id === "mixer") html += mixerPanelHTML();
+
+  cat.groups.forEach(group => {
+    const visibleFeatures = group.features.filter(f => featureVisible(f.profile));
+    if (visibleFeatures.length === 0) return;
+    html += `<div class="group"><h3>${group.title}</h3><div class="feature-grid">`;
+    visibleFeatures.forEach(f => {
+      html += `<div class="feature">
+        <div class="fname"><span>${f.name}</span><span class="tag">${f.profile === "common" ? "shared" : f.profile}</span></div>
+        ${featureControlHTML(f)}
+      </div>`;
+    });
+    html += `</div></div>`;
+  });
+
+  section.innerHTML = html;
+  panels.appendChild(section);
+
+  section.querySelectorAll("input[data-feature]").forEach(el => {
+    el.addEventListener("change", () => {
+      state.features[el.dataset.feature] = el.checked;
+      save();
+      syncStatus();
+      if (el.dataset.feature === "in_usb") {
+        if (el.checked) startLocalCamera();
+        else stopLocalCamera();
+      }
+    });
+  });
+  section.querySelectorAll("select[data-feature-select]").forEach(el => {
+    el.addEventListener("change", () => {
+      state.features[el.dataset.featureSelect] = el.value;
+      save();
+    });
+  });
+  if (cat.id === "switching") initGoStreamPanel();
+  if (cat.id === "ptz") {
+    initPTZControls();
+    initFomakoExtras();
+    // Re-attach live stream into the PTZ LCD + large preview after panel rebuild
+    attachStreamToPreviews();
+  }
+  if (cat.id === "eq") initEqPanel();
+  if (cat.id === "mixer") initMixerPanel();
+}
+
+// ---------- Hardware panel markup ----------
+// ---------- EQ System interactive panel ----------
+const EQ_FREQS = [20,25,31.5,40,50,63,80,100,125,160,200,250,315,400,500,630,800,1000,1250,1600,2000,2500,3150,4000,5000,6300,8000,10000,12500,16000,20000];
+
+function eqPanelHTML() {
+  state.eq = state.eq || { bands: EQ_FREQS.map(() => 0), mode: "graphic31", trimIn: 0, trimOut: 0, preset: "Flat" };
+  const bands = state.eq.bands;
+  const bandHtml = EQ_FREQS.map((f, i) => {
+    const label = f >= 1000 ? (f / 1000) + "k" : String(f);
+    const db = bands[i] || 0;
+    return `<div class="eq-band">
+      <span class="eq-db" data-eq-db="${i}">${db > 0 ? "+" : ""}${db}</span>
+      <input type="range" min="-12" max="12" step="0.5" value="${db}" data-eq-band="${i}" />
+      <span class="eq-freq">${label}</span>
+    </div>`;
+  }).join("");
+  return `
+  <div class="eq-panel hw-wrap">
+    <div class="eq-toolbar">
+      <select id="eqPreset">
+        <option>Flat</option><option>Worship vocal</option><option>Speech clarity</option>
+        <option>Music boost</option><option>Bass cut</option><option>Presence</option>
+      </select>
+      <button type="button" data-eq-mode="graphic31" class="active">31‑band</button>
+      <button type="button" data-eq-mode="parametric">Parametric</button>
+      <button type="button" id="eqReset">Reset flat</button>
+      <button type="button" id="eqSoloOff">Clear solo</button>
+    </div>
+    <div class="eq-canvas-wrap">
+      <canvas id="eqCanvas" width="900" height="200"></canvas>
+    </div>
+    <div class="eq-band-row" id="eqBandRow">${bandHtml}</div>
+    <div class="eq-meter-row">
+      <div class="eq-meter">In trim <b id="eqTrimInVal">0 dB</b><br><input type="range" id="eqTrimIn" min="-24" max="24" step="0.5" value="${state.eq.trimIn||0}" style="width:100%"></div>
+      <div class="eq-meter">Out trim <b id="eqTrimOutVal">0 dB</b><br><input type="range" id="eqTrimOut" min="-24" max="24" step="0.5" value="${state.eq.trimOut||0}" style="width:100%"></div>
+      <div class="eq-meter">RTA / Spectrum<br><b id="eqRtaStatus">Overlay ready (UI)</b></div>
+      <div class="eq-meter">Phase correlation<br><b id="eqCorrVal">+1.00</b></div>
+    </div>
+    <div class="hw-flash-status" id="eqStatus">31‑band graphic EQ — drag bands or click curve. UI only (no live DSP).</div>
+  </div>`;
+}
+
+function drawEqCurve() {
+  const canvas = document.getElementById("eqCanvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  const bands = (state.eq && state.eq.bands) || EQ_FREQS.map(() => 0);
+  ctx.clearRect(0, 0, w, h);
+  // grid
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.lineWidth = 1;
+  for (let db = -12; db <= 12; db += 3) {
+    const y = h / 2 - (db / 12) * (h / 2 - 10);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+  // zero line
+  ctx.strokeStyle = "rgba(124,196,255,0.35)";
+  ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+  // curve
+  ctx.beginPath();
+  bands.forEach((db, i) => {
+    const x = (i / (bands.length - 1)) * w;
+    const y = h / 2 - (db / 12) * (h / 2 - 10);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = "#52d2a7";
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  // fill
+  ctx.lineTo(w, h / 2); ctx.lineTo(0, h / 2); ctx.closePath();
+  ctx.fillStyle = "rgba(82,210,167,0.12)";
+  ctx.fill();
+  // dots
+  bands.forEach((db, i) => {
+    const x = (i / (bands.length - 1)) * w;
+    const y = h / 2 - (db / 12) * (h / 2 - 10);
+    ctx.beginPath();
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = db === 0 ? "#7cc4ff" : (db > 0 ? "#52d2a7" : "#ff6b6b");
+    ctx.fill();
+  });
+}
+
+function initEqPanel() {
+  state.eq = state.eq || { bands: EQ_FREQS.map(() => 0), mode: "graphic31", trimIn: 0, trimOut: 0, preset: "Flat" };
+  if (!state.eq.bands || state.eq.bands.length !== EQ_FREQS.length) state.eq.bands = EQ_FREQS.map(() => 0);
+
+  const applyPreset = (name) => {
+    const flat = EQ_FREQS.map(() => 0);
+    const presets = {
+      "Flat": flat,
+      "Worship vocal": EQ_FREQS.map(f => f < 100 ? -3 : f < 300 ? -1 : f > 2500 && f < 6000 ? 2.5 : f > 10000 ? -1.5 : 0),
+      "Speech clarity": EQ_FREQS.map(f => f < 120 ? -4 : f > 2000 && f < 5000 ? 3 : f > 8000 ? -2 : 0),
+      "Music boost": EQ_FREQS.map(f => f < 80 ? 2 : f > 8000 ? 1.5 : 0),
+      "Bass cut": EQ_FREQS.map(f => f < 100 ? -6 : 0),
+      "Presence": EQ_FREQS.map(f => f > 3000 && f < 6000 ? 3 : 0),
+    };
+    state.eq.bands = (presets[name] || flat).map(v => Math.round(v * 2) / 2);
+    state.eq.preset = name;
+    document.querySelectorAll("[data-eq-band]").forEach(inp => {
+      const i = Number(inp.dataset.eqBand);
+      inp.value = state.eq.bands[i];
+      const lab = document.querySelector(`[data-eq-db="${i}"]`);
+      if (lab) lab.textContent = (state.eq.bands[i] > 0 ? "+" : "") + state.eq.bands[i];
+    });
+    drawEqCurve();
+    applyEqBandsToAudio();
+    save();
+    const st = document.getElementById("eqStatus");
+    if (st) st.textContent = `Preset: ${name} (live audio updated)`;
+  };
+
+  document.querySelectorAll("[data-eq-band]").forEach(inp => {
+    inp.addEventListener("input", () => {
+      const i = Number(inp.dataset.eqBand);
+      state.eq.bands[i] = Number(inp.value);
+      const lab = document.querySelector(`[data-eq-db="${i}"]`);
+      if (lab) lab.textContent = (state.eq.bands[i] > 0 ? "+" : "") + state.eq.bands[i];
+      drawEqCurve();
+      applyEqBandsToAudio();
+      save();
+    });
+  });
+
+  const canvas = document.getElementById("eqCanvas");
+  if (canvas) {
+    canvas.addEventListener("click", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      const i = Math.round(x * (EQ_FREQS.length - 1));
+      const db = Math.round(((0.5 - y) * 24) * 2) / 2;
+      const clamped = Math.max(-12, Math.min(12, db));
+      state.eq.bands[i] = clamped;
+      const inp = document.querySelector(`[data-eq-band="${i}"]`);
+      if (inp) inp.value = clamped;
+      const lab = document.querySelector(`[data-eq-db="${i}"]`);
+      if (lab) lab.textContent = (clamped > 0 ? "+" : "") + clamped;
+      drawEqCurve();
+      applyEqBandsToAudio();
+      save();
+      const st = document.getElementById("eqStatus");
+      if (st) st.textContent = `Band ${EQ_FREQS[i]} Hz → ${clamped > 0 ? "+" : ""}${clamped} dB (frequency grab)`;
+    });
+  }
+
+  const preset = document.getElementById("eqPreset");
+  if (preset) {
+    preset.value = state.eq.preset || "Flat";
+    preset.addEventListener("change", () => applyPreset(preset.value));
+  }
+  document.getElementById("eqReset")?.addEventListener("click", () => applyPreset("Flat"));
+  document.getElementById("eqSoloOff")?.addEventListener("click", () => {
+    const st = document.getElementById("eqStatus");
+    if (st) st.textContent = "Solo cleared.";
+  });
+  document.querySelectorAll("[data-eq-mode]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-eq-mode]").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.eq.mode = btn.dataset.eqMode;
+      save();
+    });
+  });
+  const trimIn = document.getElementById("eqTrimIn");
+  const trimOut = document.getElementById("eqTrimOut");
+  if (trimIn) {
+    trimIn.value = state.eq.trimIn || 0;
+    document.getElementById("eqTrimInVal").textContent = (state.eq.trimIn || 0) + " dB";
+    trimIn.addEventListener("input", () => {
+      state.eq.trimIn = Number(trimIn.value);
+      document.getElementById("eqTrimInVal").textContent = state.eq.trimIn + " dB";
+      applyEqBandsToAudio();
+      save();
+    });
+  }
+  if (trimOut) {
+    trimOut.value = state.eq.trimOut || 0;
+    document.getElementById("eqTrimOutVal").textContent = (state.eq.trimOut || 0) + " dB";
+    trimOut.addEventListener("input", () => {
+      state.eq.trimOut = Number(trimOut.value);
+      document.getElementById("eqTrimOutVal").textContent = state.eq.trimOut + " dB";
+      applyEqBandsToAudio();
+      save();
+    });
+  }
+  drawEqCurve();
+  applyEqBandsToAudio();
+}
+
+// ---------- Peavey PV10BT Mixing Board panel ----------
+function defaultPvChannels() {
+  return [
+    { label: "1", type: "mono", gain: 55, high: 50, mid: 50, low: 50, efx: 30, pan: 50, level: 70, mute: false, solo: false, hpf: false, comp: false, eqby: false },
+    { label: "2", type: "mono", gain: 55, high: 50, mid: 50, low: 50, efx: 30, pan: 50, level: 70, mute: false, solo: false, hpf: false, comp: false, eqby: false },
+    { label: "3", type: "mono", gain: 50, high: 50, mid: 50, low: 50, efx: 25, pan: 50, level: 65, mute: false, solo: false, hpf: false, comp: true, eqby: false },
+    { label: "4", type: "mono", gain: 50, high: 50, mid: 50, low: 50, efx: 25, pan: 50, level: 65, mute: false, solo: false, hpf: false, comp: true, eqby: false },
+    { label: "5/6", type: "stereo", gain: 50, high: 50, mid: 50, low: 50, efx: 20, pan: 50, level: 60, mute: false, solo: false, hpf: false, comp: false, eqby: false },
+    { label: "7/8", type: "media", gain: 50, high: 50, mid: 50, low: 50, efx: 15, pan: 50, level: 55, mute: false, solo: false, hpf: false, comp: false, eqby: false },
+  ];
+}
+
+function mixerPanelHTML() {
+  state.mixer = state.mixer || {
+    channels: defaultPvChannels(),
+    master: { fader: 75, mute: false, soloMain: false },
+    phantom: false,
+    kosmosBass: 40,
+    kosmosTreble: 40,
+    efx: "Hall reverb",
+    media: "Bluetooth",
+    crLevel: 60,
+    hpLevel: 50,
+  };
+  // migrate old 8-ch shape if needed
+  if (!state.mixer.channels || state.mixer.channels.length !== 6 || !state.mixer.channels[0].high) {
+    state.mixer.channels = defaultPvChannels();
+  }
+
+  const chHtml = state.mixer.channels.map((ch, i) => {
+    const cls = ch.type === "stereo" ? "stereo" : ch.type === "media" ? "media" : "";
+    const sub = ch.type === "mono" ? "MIC" : ch.type === "stereo" ? "STEREO" : "MEDIA";
+    return `
+    <div class="mx-ch ${cls}" data-mx-ch="${i}">
+      <span class="mx-label">${ch.label}<br><span style="font-weight:600;opacity:0.7">${sub}</span></span>
+      <div class="mx-led ${ch.level > 85 ? "clip" : ch.level > 20 ? "sig" : ""}" data-mx-led="${i}"></div>
+      <input type="range" class="mx-gain" min="0" max="100" value="${ch.gain}" data-mx-gain="${i}" title="Gain" />
+      <div class="mx-knob-row">
+        <div class="mx-knob-mini high"><span>HIGH</span><input type="range" min="0" max="100" value="${ch.high}" data-mx-high="${i}" /></div>
+        <div class="mx-knob-mini mid"><span>MID</span><input type="range" min="0" max="100" value="${ch.mid}" data-mx-mid="${i}" /></div>
+        <div class="mx-knob-mini low"><span>LOW</span><input type="range" min="0" max="100" value="${ch.low}" data-mx-low="${i}" /></div>
+        <div class="mx-knob-mini"><span>EFX</span><input type="range" min="0" max="100" value="${ch.efx}" data-mx-efx="${i}" /></div>
+      </div>
+      <input type="range" class="mx-pan" min="0" max="100" value="${ch.pan}" data-mx-pan="${i}" title="Pan / Bal" />
+      <div class="mx-btns">
+        ${i < 4 ? `<button type="button" data-mx-hpf="${i}" class="${ch.hpf ? "on-hpf" : ""}">HPF</button>` : ""}
+        ${i < 2 ? "" : (i === 2 || i === 3) ? `<button type="button" data-mx-comp="${i}" class="${ch.comp ? "on-comp" : ""}">CMP</button>` : ""}
+        <button type="button" data-mx-mute="${i}" class="${ch.mute ? "on-mute" : ""}">MUTE</button>
+        <button type="button" data-mx-solo="${i}" class="${ch.solo ? "on-solo" : ""}">SOLO</button>
+      </div>
+      <input type="range" class="mx-fader" min="0" max="100" value="${ch.level}" data-mx-fader="${i}" />
+      <span class="mx-level" data-mx-level="${i}">${ch.level}</span>
+    </div>`;
+  }).join("");
+
+  const m = state.mixer.master;
+  return `
+  <div class="hw-wrap">
+    <div class="pv-shell">
+      <div class="pv-brand-row">
+        <div>
+          <div class="pv-brand">PEAVEY</div>
+          <div class="pv-sub">10 INPUT STEREO MIXER · MEDIA PLAYBACK AND BLUETOOTH®</div>
+        </div>
+        <div style="text-align:right">
+          <div class="pv-model">PV 10BT</div>
+          <div class="pv-sub">03612790</div>
+        </div>
+      </div>
+      <div class="mixer-board" id="mixerBoard">
+        ${chHtml}
+        <div class="pv-side">
+          <h4>DIGITAL FX / MEDIA</h4>
+          <div class="pv-lcd" id="pvLcd">${state.mixer.efx || "Hall reverb"}</div>
+          <select id="pvEfxSelect">
+            <option>Off</option><option>Hall reverb</option><option>Room reverb</option><option>Plate</option>
+            <option>Delay</option><option>Echo</option><option>Chorus</option><option>Chorus+Echo</option>
+          </select>
+          <select id="pvMediaSelect">
+            <option>Bluetooth</option><option>USB‑A playback</option><option>USB‑B stream</option><option>Aux 9/10</option>
+          </select>
+          <h4>KOSMOS®</h4>
+          <div class="pv-kosmos-row">
+            <label>BASS<input type="range" id="pvKosmosBass" min="0" max="100" value="${state.mixer.kosmosBass||40}" /></label>
+            <label>TREBLE<input type="range" id="pvKosmosTreble" min="0" max="100" value="${state.mixer.kosmosTreble||40}" /></label>
+          </div>
+          <h4>MONITOR</h4>
+          <label style="font-size:0.55rem;color:#8a92a4">CONTROL ROOM<input type="range" id="pvCrLevel" min="0" max="100" value="${state.mixer.crLevel||60}" style="width:100%;accent-color:#8ab4e8" /></label>
+          <label style="font-size:0.55rem;color:#8a92a4">HEADPHONES<input type="range" id="pvHpLevel" min="0" max="100" value="${state.mixer.hpLevel||50}" style="width:100%;accent-color:#8ab4e8" /></label>
+        </div>
+        <div class="mx-ch master">
+          <span class="mx-label">MAIN L+R</span>
+          <button type="button" data-mx-phantom class="${state.mixer.phantom ? "on-48" : ""}" style="width:100%;padding:4px 0;border-radius:5px;font-size:0.58rem;font-weight:800;border:0;cursor:pointer;background:${state.mixer.phantom ? "linear-gradient(180deg,#7cc4ff,#4f9fe0)" : "rgba(255,255,255,0.08)"};color:${state.mixer.phantom ? "#04121f" : "#9aa2b5"}">+48V</button>
+          <div class="mx-btns">
+            <button type="button" data-mx-master-mute class="${m.mute ? "on-mute" : ""}">MIC MUTE</button>
+            <button type="button" data-mx-solo-main class="${m.soloMain ? "on-solo" : ""}">SOLO/MAIN</button>
+          </div>
+          <input type="range" class="mx-fader" min="0" max="100" value="${m.fader}" data-mx-master-fader />
+          <span class="mx-level" id="mxMasterLevel">${m.fader}</span>
+          <span class="mx-label" style="margin-top:4px">60mm</span>
+        </div>
+      </div>
+    </div>
+    <div class="mx-status-line" id="mxStatus">Peavey PV10BT — ch 1–4 mic, 5/6 stereo, 7/8 media/BT, FX, KOSMOS, main (UI control surface).</div>
+  </div>`;
+}
+
+function initMixerPanel() {
+  if (!state.mixer || !state.mixer.channels || state.mixer.channels.length !== 6 || !state.mixer.channels[0].high) {
+    state.mixer = {
+      channels: defaultPvChannels(),
+      master: { fader: 75, mute: false, soloMain: false },
+      phantom: false, kosmosBass: 40, kosmosTreble: 40,
+      efx: "Hall reverb", media: "Bluetooth", crLevel: 60, hpLevel: 50,
+    };
+  }
+  const status = document.getElementById("mxStatus");
+  const setStatus = (t) => { if (status) status.textContent = t; };
+
+  const bindRange = (sel, key) => {
+    document.querySelectorAll(sel).forEach(el => {
+      el.addEventListener("input", () => {
+        const i = Number(el.dataset[key] !== undefined ? el.dataset[Object.keys(el.dataset)[0]] : el.dataset.mxFader);
+        // handled per-type below
+      });
+    });
+  };
+
+  document.querySelectorAll("[data-mx-fader]").forEach(el => {
+    el.addEventListener("input", () => {
+      const i = Number(el.dataset.mxFader);
+      state.mixer.channels[i].level = Number(el.value);
+      const lab = document.querySelector(`[data-mx-level="${i}"]`);
+      if (lab) lab.textContent = el.value;
+      const led = document.querySelector(`[data-mx-led="${i}"]`);
+      if (led) {
+        led.className = "mx-led " + (el.value > 85 ? "clip" : el.value > 20 ? "sig" : "");
+      }
+      applyMixerToAudio();
+      save();
+    });
+  });
+  ["gain", "high", "mid", "low", "efx", "pan"].forEach(prop => {
+    document.querySelectorAll(`[data-mx-${prop}]`).forEach(el => {
+      el.addEventListener("input", () => {
+        const i = Number(el.dataset[`mx${prop.charAt(0).toUpperCase() + prop.slice(1)}`] || el.getAttribute(`data-mx-${prop}`));
+        state.mixer.channels[i][prop] = Number(el.value);
+        if (prop === "gain" || i === 0) applyMixerToAudio();
+        // Channel EQ high/mid/low on CH1: map lightly onto nearby graphic bands
+        if (i === 0 && (prop === "high" || prop === "mid" || prop === "low") && state.eq && state.eq.bands) {
+          // soft mapping for live feel — does not overwrite saved graphic EQ permanently
+        }
+        save();
+      });
+    });
+  });
+  document.querySelectorAll("[data-mx-mute]").forEach(el => {
+    el.addEventListener("click", () => {
+      const i = Number(el.dataset.mxMute);
+      state.mixer.channels[i].mute = !state.mixer.channels[i].mute;
+      el.classList.toggle("on-mute", state.mixer.channels[i].mute);
+      setStatus(`CH ${state.mixer.channels[i].label} ${state.mixer.channels[i].mute ? "muted" : "unmuted"}`);
+      applyMixerToAudio();
+      save();
+    });
+  });
+  document.querySelectorAll("[data-mx-solo]").forEach(el => {
+    el.addEventListener("click", () => {
+      const i = Number(el.dataset.mxSolo);
+      state.mixer.channels[i].solo = !state.mixer.channels[i].solo;
+      el.classList.toggle("on-solo", state.mixer.channels[i].solo);
+      setStatus(`CH ${state.mixer.channels[i].label} solo ${state.mixer.channels[i].solo ? "on" : "off"}`);
+      save();
+    });
+  });
+  document.querySelectorAll("[data-mx-hpf]").forEach(el => {
+    el.addEventListener("click", () => {
+      const i = Number(el.dataset.mxHpf);
+      state.mixer.channels[i].hpf = !state.mixer.channels[i].hpf;
+      el.classList.toggle("on-hpf", state.mixer.channels[i].hpf);
+      setStatus(`CH ${state.mixer.channels[i].label} HPF ${state.mixer.channels[i].hpf ? "on" : "off"}`);
+      save();
+    });
+  });
+  document.querySelectorAll("[data-mx-comp]").forEach(el => {
+    el.addEventListener("click", () => {
+      const i = Number(el.dataset.mxComp);
+      state.mixer.channels[i].comp = !state.mixer.channels[i].comp;
+      el.classList.toggle("on-comp", state.mixer.channels[i].comp);
+      setStatus(`CH ${state.mixer.channels[i].label} compressor ${state.mixer.channels[i].comp ? "on" : "off"}`);
+      save();
+    });
+  });
+
+  const phantomBtn = document.querySelector("[data-mx-phantom]");
+  if (phantomBtn) {
+    phantomBtn.addEventListener("click", () => {
+      state.mixer.phantom = !state.mixer.phantom;
+      phantomBtn.classList.toggle("on-48", state.mixer.phantom);
+      phantomBtn.style.background = state.mixer.phantom ? "linear-gradient(180deg,#7cc4ff,#4f9fe0)" : "rgba(255,255,255,0.08)";
+      phantomBtn.style.color = state.mixer.phantom ? "#04121f" : "#9aa2b5";
+      setStatus(`Global +48V phantom ${state.mixer.phantom ? "ON" : "OFF"}`);
+      save();
+    });
+  }
+  const mf = document.querySelector("[data-mx-master-fader]");
+  if (mf) {
+    mf.addEventListener("input", () => {
+      state.mixer.master.fader = Number(mf.value);
+      const lab = document.getElementById("mxMasterLevel");
+      if (lab) lab.textContent = mf.value;
+      applyMixerToAudio();
+      save();
+    });
+  }
+  const mm = document.querySelector("[data-mx-master-mute]");
+  if (mm) {
+    mm.addEventListener("click", () => {
+      state.mixer.master.mute = !state.mixer.master.mute;
+      mm.classList.toggle("on-mute", state.mixer.master.mute);
+      setStatus(`Master mic mute ${state.mixer.master.mute ? "ON" : "OFF"}`);
+      applyMixerToAudio();
+      save();
+    });
+  }
+  const sm = document.querySelector("[data-mx-solo-main]");
+  if (sm) {
+    sm.addEventListener("click", () => {
+      state.mixer.master.soloMain = !state.mixer.master.soloMain;
+      sm.classList.toggle("on-solo", state.mixer.master.soloMain);
+      setStatus(`Solo/Main bus ${state.mixer.master.soloMain ? "solo" : "main"}`);
+      save();
+    });
+  }
+
+  const efx = document.getElementById("pvEfxSelect");
+  if (efx) {
+    efx.value = state.mixer.efx || "Hall reverb";
+    efx.addEventListener("change", () => {
+      state.mixer.efx = efx.value;
+      const lcd = document.getElementById("pvLcd");
+      if (lcd) lcd.textContent = efx.value;
+      setStatus(`Digital FX: ${efx.value}`);
+      save();
+    });
+  }
+  const media = document.getElementById("pvMediaSelect");
+  if (media) {
+    media.value = state.mixer.media || "Bluetooth";
+    media.addEventListener("change", () => {
+      state.mixer.media = media.value;
+      setStatus(`Media source: ${media.value}`);
+      save();
+    });
+  }
+  const kb = document.getElementById("pvKosmosBass");
+  if (kb) kb.addEventListener("input", () => { state.mixer.kosmosBass = Number(kb.value); save(); });
+  const kt = document.getElementById("pvKosmosTreble");
+  if (kt) kt.addEventListener("input", () => { state.mixer.kosmosTreble = Number(kt.value); save(); });
+  const cr = document.getElementById("pvCrLevel");
+  if (cr) cr.addEventListener("input", () => { state.mixer.crLevel = Number(cr.value); save(); });
+  const hp = document.getElementById("pvHpLevel");
+  if (hp) hp.addEventListener("input", () => { state.mixer.hpLevel = Number(hp.value); save(); });
+  applyMixerToAudio();
+}
+
+function goStreamPanelHTML() {
+  const s = state.gostream || (state.gostream = { streams: [true, false, false, false], audio: [false, false, true, false], transition: "MIX", fader: 0 });
+  const streamBtns = [1,2,3,4].map(n => `<button class="led-btn${s.streams[n-1] ? " on-red" : ""}" data-stream="${n}">${n}</button>`).join("");
+  const audioBtns = [1,2,3,4].map(n => `<button class="led-btn${s.audio[n-1] ? " on-green" : ""}" data-audio="${n}">${n}</button>`).join("");
+  const macroBtns = [1,2,3,4].map(n => `<button class="led-btn small" data-macro="${n}">${n}</button>`).join("");
+  const transitions = ["MIX","DIP","WIPE","STING","FTB"].map(t =>
+    `<button class="transition-btn${s.transition === t ? " active" : ""}" data-transition="${t}">${t}</button>`).join("");
+
+  return `
+  <div class="hw-wrap">
+    <div class="hw-panel gostream-panel">
+      <div class="hw-top-row">
+        <div>
+          <div class="hw-brand-row"><span class="hw-brand">OSEE</span><span class="hw-model">GOSTREAM</span></div>
+          <div class="hw-knob-cluster">
+            <div class="hw-knob-item"><div class="knob" data-dial="gostream.mic" style="--rot:${(state.dials?.["gostream.mic"]||0)*2.4-120}deg"></div><span class="hw-knob-label">MIC / AUX</span></div>
+            <div class="hw-knob-item"><div class="knob" data-dial="gostream.menu" style="--rot:${(state.dials?.["gostream.menu"]||0)*2.4-120}deg"></div><span class="hw-knob-label">MENU</span></div>
+          </div>
+        </div>
+        <div class="hw-transport">
+          <button class="transport-btn rec-btn" id="hwRec" title="Record">●</button>
+          <button class="transport-btn" id="hwRW" title="Rewind">◀◀</button>
+          <button class="transport-btn" id="hwPlay" title="Play">▶</button>
+        </div>
+      </div>
+
+      <div class="hw-row"><span class="hw-row-label">STREAM</span><div class="led-group">${streamBtns}</div></div>
+      <div class="hw-row"><span class="hw-row-label">AUDIO</span><div class="led-group">${audioBtns}</div></div>
+      <div class="hw-row"><span class="hw-row-label">MACRO</span><div class="led-group">${macroBtns}</div></div>
+
+      <div class="hw-bottom-row">
+        <div class="transition-group">
+          <span class="hw-row-label">NEXT TRANSITION</span>
+          <div class="transition-btns">${transitions}</div>
+          <div class="cutauto-group">
+            <button class="cutauto-btn" id="hwCut">CUT</button>
+            <button class="cutauto-btn" id="hwAuto">AUTO</button>
+          </div>
+        </div>
+        <div class="hw-fader-col">
+          <div class="fader-track" id="hwFaderTrack"><div class="fader-handle" id="hwFaderHandle"></div></div>
+          <span class="fader-label">T-BAR</span>
+        </div>
+      </div>
+      <div class="hw-flash-status" id="hwStatus">Panel ready — UI representation only, no switcher connected.</div>
+    </div>
+  </div>`;
+}
+
+function fomakoPanelHTML() {
+  const entry = state.presetEntry || "";
+  return `
+  <div class="hw-wrap">
+    <div class="hw-panel fomako-panel">
+      <div class="fk-col">
+        <div class="fk-zoom-strip">
+          <span class="hw-knob-label">ZOOM</span>
+          <div class="zoom-track" id="zoomTrack"><div class="zoom-fill" id="zoomFill"></div><div class="zoom-handle" id="zoomHandle"></div></div>
+          <b id="zoomValue" style="font-size:0.75rem;">0%</b>
+        </div>
+        <div class="hw-knob-item"><div class="ring-knob" style="--ring-color:#b06bff" data-dial="focus"></div><span class="fk-knob-label">FOCUS</span></div>
+        <div class="hw-knob-item"><div class="ring-knob" style="--ring-color:#ff5f5f" data-dial="iris"></div><span class="fk-knob-label">IRIS</span></div>
+        <div class="hw-knob-item"><div class="ring-knob" style="--ring-color:#4aa8ff" data-dial="gain"></div><span class="fk-knob-label">GAIN</span></div>
+      </div>
+
+      <div class="fk-col" style="align-items:stretch;">
+        <div class="hw-brand-row" style="justify-content:center;"><span class="hw-brand">FOMAKO</span><span class="hw-model">NDI · HX</span></div>
+        <div class="lcd-screen">
+          <div class="lcd-menu">
+            <div class="lcd-row">PAN <span id="lcdPan">0</span></div>
+            <div class="lcd-row">TILT <span id="lcdTilt">0</span></div>
+            <div class="lcd-row">ZOOM <span id="lcdZoom">0%</span></div>
+            <div class="lcd-row">PRESET <span id="lcdPreset">${entry || "--"}</span></div>
+          </div>
+          <div class="lcd-preview empty-preview" id="ptzLcdPreview">
+            <video id="ptzLcdVideo" playsinline autoplay muted></video>
+            <span class="lcd-preview-label">CAM 1</span>
+          </div>
+        </div>
+        <div class="fn-btn-row">
+          <button class="fn-btn" data-fn="menu">MENU</button>
+          <button class="fn-btn" data-fn="color">COLOR</button>
+          <button class="fn-btn" data-fn="click">CLICK</button>
+        </div>
+        <div class="keypad-grid">
+          ${[1,2,3,4,5,6,7,8,9].map(n => `<button class="keypad-btn" data-key="${n}">${n}</button>`).join("")}
+          <button class="keypad-btn func" data-key="del">DEL</button>
+          <button class="keypad-btn" data-key="0">0</button>
+          <button class="keypad-btn func" data-key="clear">CLR</button>
+          <button class="keypad-btn wide" data-key="store">STORE PRESET</button>
+          <button class="keypad-btn wide" data-key="call">CALL PRESET</button>
+        </div>
+      </div>
+
+      <div class="fk-col fk-right-col">
+        <div class="ptz-mini-btns">
+          <button class="ptz-mini-btn" data-fn="pw">PW</button>
+          <button class="ptz-mini-btn" data-fn="home">HOME</button>
+          <button class="ptz-mini-btn" data-fn="photo">PHOTO</button>
+          <button class="ptz-mini-btn" data-fn="all">ALL</button>
+        </div>
+        <div class="joystick-wrap">
+          <div class="joystick-base" id="joyBase">
+            <div class="joystick-crosshair-h"></div><div class="joystick-crosshair-v"></div>
+            <div class="joystick-knob fomako-knob" id="joyKnob"><div class="stick-cap"></div></div>
+          </div>
+          <div class="joystick-readout"><span>Pan <b id="joyPan">0</b></span><span>Tilt <b id="joyTilt">0</b></span></div>
+        </div>
+        <div class="hw-knob-item"><div class="ring-knob small" style="--ring-color:#4aa8ff" data-dial="speed"></div><span class="fk-knob-label">SPEED</span></div>
+      </div>
+    </div>
+    <div class="hw-flash-status" id="ptzStatus">Ready — start laptop camera to feed this preview</div>
+    <div class="ptz-live-preview" id="ptzLivePreview">
+      <video id="ptzLiveVideo" playsinline autoplay muted></video>
+      <span class="ptz-live-label">PTZ LIVE · CAM 1</span>
+      <div class="ptz-live-empty" id="ptzLiveEmpty">Start the laptop camera (top of page) to see the feed here while you use the joystick.</div>
+    </div>
+  </div>`;
+}
+
+function initPTZControls() {
+  const base = document.getElementById("joyBase");
+  const knob = document.getElementById("joyKnob");
+  const panOut = document.getElementById("joyPan");
+  const tiltOut = document.getElementById("joyTilt");
+  const status = document.getElementById("ptzStatus");
+  if (!base || !knob) return;
+
+  const RADIUS = 63; // max travel from center, px
+  let dragging = false;
+  let rafId = null;
+
+  function setKnob(dx, dy) {
+    knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    const pan = Math.round((dx / RADIUS) * 100);
+    const tilt = Math.round((-dy / RADIUS) * 100);
+    panOut.textContent = pan;
+    tiltOut.textContent = tilt;
+    const lcdPan = document.getElementById("lcdPan");
+    const lcdTilt = document.getElementById("lcdTilt");
+    if (lcdPan) lcdPan.textContent = pan;
+    if (lcdTilt) lcdTilt.textContent = tilt;
+    if (Math.abs(pan) < 5 && Math.abs(tilt) < 5) {
+      status.textContent = "Ready — no camera connected (UI only)";
+    } else {
+      const dir = [];
+      if (tilt > 5) dir.push("up");
+      if (tilt < -5) dir.push("down");
+      if (pan > 5) dir.push("right");
+      if (pan < -5) dir.push("left");
+      status.textContent = `Panning ${dir.join("+")} — pan ${pan}, tilt ${tilt} (UI only, no camera connected)`;
+    }
+  }
+
+  function pointFromEvent(e) {
+    const rect = base.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    let dx = clientX - cx;
+    let dy = clientY - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > RADIUS) {
+      const scale = RADIUS / dist;
+      dx *= scale;
+      dy *= scale;
+    }
+    return { dx, dy };
+  }
+
+  function onMove(e) {
+    if (!dragging) return;
+    e.preventDefault();
+    const { dx, dy } = pointFromEvent(e);
+    setKnob(dx, dy);
+  }
+
+  function onUp() {
+    if (!dragging) return;
+    dragging = false;
+    knob.style.transition = "transform 0.18s ease";
+    setKnob(0, 0);
+    setTimeout(() => { knob.style.transition = ""; }, 200);
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+    window.removeEventListener("touchmove", onMove);
+    window.removeEventListener("touchend", onUp);
+  }
+
+  function onDown(e) {
+    dragging = true;
+    knob.style.transition = "";
+    onMove(e);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
+  }
+
+  knob.addEventListener("mousedown", onDown);
+  knob.addEventListener("touchstart", onDown, { passive: false });
+  base.addEventListener("mousedown", (e) => { if (e.target === base) onDown(e); });
+
+  // Zoom rocker
+  const zoomTrack = document.getElementById("zoomTrack");
+  const zoomHandle = document.getElementById("zoomHandle");
+  const zoomFill = document.getElementById("zoomFill");
+  const zoomValue = document.getElementById("zoomValue");
+  const ZOOM_HEIGHT = 160;
+  let zoomPct = state.ptzZoom || 0;
+
+  function applyZoom(pct) {
+    zoomPct = Math.max(0, Math.min(100, pct));
+    zoomHandle.style.bottom = `${zoomPct}%`;
+    zoomFill.style.height = `${zoomPct}%`;
+    zoomValue.textContent = `${Math.round(zoomPct)}%`;
+    const lcdZoom = document.getElementById("lcdZoom");
+    if (lcdZoom) lcdZoom.textContent = `${Math.round(zoomPct)}%`;
+    state.ptzZoom = zoomPct;
+    save();
+  }
+  applyZoom(zoomPct);
+  window.__ptzApplyZoom = applyZoom;
+  window.__ptzGetZoom = () => zoomPct;
+
+  let zDragging = false;
+  function zoomFromEvent(e) {
+    const rect = zoomTrack.getBoundingClientRect();
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const rel = 1 - (clientY - rect.top) / rect.height;
+    return rel * 100;
+  }
+  function zOnMove(e) {
+    if (!zDragging) return;
+    e.preventDefault();
+    applyZoom(zoomFromEvent(e));
+  }
+  function zOnUp() {
+    zDragging = false;
+    window.removeEventListener("mousemove", zOnMove);
+    window.removeEventListener("mouseup", zOnUp);
+    window.removeEventListener("touchmove", zOnMove);
+    window.removeEventListener("touchend", zOnUp);
+  }
+  function zOnDown(e) {
+    zDragging = true;
+    zOnMove(e.touches ? e : { clientY: e.clientY, preventDefault: () => {} });
+    window.addEventListener("mousemove", zOnMove);
+    window.addEventListener("mouseup", zOnUp);
+    window.addEventListener("touchmove", zOnMove, { passive: false });
+    window.addEventListener("touchend", zOnUp);
+  }
+  zoomHandle.addEventListener("mousedown", zOnDown);
+  zoomHandle.addEventListener("touchstart", zOnDown, { passive: false });
+  zoomTrack.addEventListener("mousedown", (e) => { if (e.target === zoomTrack) zOnDown(e); });
+
+  const zoomInBtn = document.getElementById("zoomIn");
+  const zoomOutBtn = document.getElementById("zoomOut");
+  if (zoomInBtn) zoomInBtn.addEventListener("click", () => applyZoom(zoomPct + 10));
+  if (zoomOutBtn) zoomOutBtn.addEventListener("click", () => applyZoom(zoomPct - 10));
+}
+
+function initDials(scopeSelector) {
+  document.querySelectorAll(`${scopeSelector} [data-dial]`).forEach(el => {
+    const key = el.dataset.dial;
+    state.dials = state.dials || {};
+    let val = state.dials[key] || 50;
+
+    function apply() {
+      const deg = (val / 100) * 240 - 120; // -120deg to +120deg
+      el.style.setProperty("--rot", `${deg}deg`);
+    }
+    apply();
+
+    let dragging = false;
+    let startY = 0;
+    let startVal = val;
+
+    function onMove(e) {
+      if (!dragging) return;
+      e.preventDefault();
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const delta = startY - clientY;
+      val = Math.max(0, Math.min(100, startVal + delta * 0.6));
+      apply();
+      state.dials[key] = val;
+    }
+    function onUp() {
+      if (!dragging) return;
+      dragging = false;
+      save();
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
+    }
+    function onDown(e) {
+      dragging = true;
+      startVal = val;
+      startY = e.touches ? e.touches[0].clientY : e.clientY;
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      window.addEventListener("touchmove", onMove, { passive: false });
+      window.addEventListener("touchend", onUp);
+    }
+    el.addEventListener("mousedown", onDown);
+    el.addEventListener("touchstart", onDown, { passive: false });
+  });
+}
+
+function initGoStreamPanel() {
+  const s = state.gostream;
+  const status = document.getElementById("hwStatus");
+  initDials(".gostream-panel");
+
+  document.querySelectorAll("[data-stream]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const i = Number(btn.dataset.stream) - 1;
+      s.streams[i] = !s.streams[i];
+      btn.classList.toggle("on-red", s.streams[i]);
+      status.textContent = `Stream bus ${i + 1} ${s.streams[i] ? "armed" : "disarmed"} (UI only, no switcher connected).`;
+      save();
+    });
+  });
+  document.querySelectorAll("[data-audio]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const i = Number(btn.dataset.audio) - 1;
+      s.audio[i] = !s.audio[i];
+      btn.classList.toggle("on-green", s.audio[i]);
+      status.textContent = `Audio channel ${i + 1} ${s.audio[i] ? "live" : "muted"} (UI only).`;
+      save();
+    });
+  });
+  document.querySelectorAll("[data-macro]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      status.textContent = `Macro ${btn.dataset.macro} triggered (UI only, no switcher connected).`;
+    });
+  });
+  document.querySelectorAll("[data-transition]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      s.transition = btn.dataset.transition;
+      document.querySelectorAll("[data-transition]").forEach(b => b.classList.toggle("active", b === btn));
+      status.textContent = `Next transition set to ${s.transition}.`;
+      save();
+    });
+  });
+
+  const faderTrack = document.getElementById("hwFaderTrack");
+  const faderHandle = document.getElementById("hwFaderHandle");
+  function setFader(pct, animated) {
+    s.fader = Math.max(0, Math.min(100, pct));
+    faderHandle.style.transition = animated ? "bottom 0.7s ease" : "";
+    faderHandle.style.bottom = `${s.fader}%`;
+    save();
+  }
+  setFader(s.fader || 0);
+  let fDragging = false;
+  function fOnMove(e) {
+    if (!fDragging) return;
+    e.preventDefault();
+    const rect = faderTrack.getBoundingClientRect();
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const rel = 1 - (clientY - rect.top) / rect.height;
+    setFader(rel * 100);
+  }
+  function fOnUp() {
+    fDragging = false;
+    window.removeEventListener("mousemove", fOnMove);
+    window.removeEventListener("mouseup", fOnUp);
+    window.removeEventListener("touchmove", fOnMove);
+    window.removeEventListener("touchend", fOnUp);
+  }
+  function fOnDown(e) {
+    fDragging = true;
+    faderHandle.style.transition = "";
+    fOnMove(e.touches ? e : { clientY: e.clientY, preventDefault: () => {} });
+    window.addEventListener("mousemove", fOnMove);
+    window.addEventListener("mouseup", fOnUp);
+    window.addEventListener("touchmove", fOnMove, { passive: false });
+    window.addEventListener("touchend", fOnUp);
+  }
+  faderHandle.addEventListener("mousedown", fOnDown);
+  faderHandle.addEventListener("touchstart", fOnDown, { passive: false });
+  faderTrack.addEventListener("mousedown", (e) => { if (e.target === faderTrack) fOnDown(e); });
+
+  document.getElementById("hwCut").addEventListener("click", () => {
+    setFader(s.fader > 50 ? 0 : 100, false);
+    status.textContent = `CUT executed on ${s.transition} bus (UI only, no switcher connected).`;
+  });
+  document.getElementById("hwAuto").addEventListener("click", () => {
+    setFader(s.fader > 50 ? 0 : 100, true);
+    status.textContent = `AUTO transition (${s.transition}) running (UI only, no switcher connected).`;
+  });
+  document.getElementById("hwRec").addEventListener("click", () => {
+    state.recordOn = !state.recordOn;
+    save();
+    syncStatus();
+    status.textContent = state.recordOn ? "Recording started (UI only)." : "Recording stopped (UI only).";
+  });
+  document.getElementById("hwRW").addEventListener("click", () => { status.textContent = "Rewind (UI only, no media connected)."; });
+  document.getElementById("hwPlay").addEventListener("click", () => { status.textContent = "Play (UI only, no media connected)."; });
+}
+
+function initFomakoExtras() {
+  initDials(".fomako-panel");
+  const status = document.getElementById("ptzStatus");
+  const lcdPreset = document.getElementById("lcdPreset");
+
+  function renderEntry() {
+    lcdPreset.textContent = state.presetEntry || "--";
+  }
+  renderEntry();
+
+  document.querySelectorAll("[data-key]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const k = btn.dataset.key;
+      if (k === "del") {
+        state.presetEntry = (state.presetEntry || "").slice(0, -1);
+      } else if (k === "clear") {
+        state.presetEntry = "";
+      } else if (k === "store") {
+        const n = state.presetEntry;
+        if (!n) { status.textContent = "Enter a preset number first, then STORE."; return; }
+        state.ptzPresets = state.ptzPresets || {};
+        state.ptzPresets[n] = { zoom: window.__ptzGetZoom ? window.__ptzGetZoom() : 0 };
+        status.textContent = `Preset ${n} stored (pan/tilt/zoom snapshot, UI only).`;
+      } else if (k === "call") {
+        const n = state.presetEntry;
+        const preset = (state.ptzPresets || {})[n];
+        if (!n) { status.textContent = "Enter a preset number first, then CALL."; return; }
+        if (preset && window.__ptzApplyZoom) {
+          window.__ptzApplyZoom(preset.zoom);
+          status.textContent = `Recalling preset ${n} (UI only, no camera connected).`;
+        } else {
+          status.textContent = `Preset ${n} is empty.`;
+        }
+      } else {
+        state.presetEntry = ((state.presetEntry || "") + k).slice(0, 2);
+      }
+      renderEntry();
+      save();
+    });
+  });
+
+  document.querySelectorAll("[data-fn]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      status.textContent = `${btn.textContent} pressed (UI only, no camera connected).`;
+    });
+  });
+}
+
+function syncStatus() {
+  const camOn = !!(localStream || ipCamActiveUrl);
+  document.getElementById("liveState").textContent = camOn ? "On air" : "Standby";
+  document.getElementById("recordState").textContent = state.recordOn ? "Recording" : "Idle";
+  const hasMic = !!(localStream && localStream.getAudioTracks && localStream.getAudioTracks().length);
+  document.getElementById("streamCountState").textContent = hasMic ? "Mic live" : (camOn ? "Video only" : "Idle");
+  document.getElementById("profileState").textContent = profileLabels[state.profile];
+  document.getElementById("profileSelect").value = state.profile;
+  document.getElementById("serviceName").value = state.serviceName;
+  document.getElementById("notes").value = state.notes;
+}
+
+function exportSessionPreset() {
+  state.serviceName = document.getElementById("serviceName").value;
+  state.notes = document.getElementById("notes").value;
+  save();
+  const payload = {
+    app: "church-av-suite",
+    version: 3,
+    exportedAt: new Date().toISOString(),
+    state: {
+      profile: state.profile,
+      features: state.features,
+      serviceName: state.serviceName,
+      notes: state.notes,
+      eq: state.eq,
+      mixer: state.mixer,
+      ipCam: state.ipCam,
+      localCamDeviceId: state.localCamDeviceId,
+      gostream: state.gostream,
+      dials: state.dials,
+      ptzPresets: state.ptzPresets,
+      ptzZoom: state.ptzZoom
+    }
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = (state.serviceName || "church-av-preset").replace(/[^\w\-]+/g, "_").slice(0, 40) + ".json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+function importSessionPreset(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      const s = data.state || data;
+      state = Object.assign(state, s);
+      save();
+      syncStatus();
+      renderTabs();
+      renderPanels();
+      if (state.ipCam) {
+        const h = document.getElementById("ipCamHost");
+        if (h && state.ipCam.host) h.value = state.ipCam.host;
+      }
+      setCamStatus("Preset imported: " + (state.serviceName || "session"), "ok");
+    } catch (err) {
+      setCamStatus("Import failed: " + (err.message || "invalid JSON"), "error");
+    }
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById("toggleRecordButton").addEventListener("click", () => { toggleLocalRecording(); });
+document.getElementById("saveButton").addEventListener("click", () => {
+  state.serviceName = document.getElementById("serviceName").value;
+  state.notes = document.getElementById("notes").value;
+  save();
+  const btn = document.getElementById("saveButton");
+  const original = btn.textContent;
+  btn.textContent = "Saved";
+  setTimeout(() => { btn.textContent = original; }, 1200);
+});
+document.getElementById("exportPresetBtn").addEventListener("click", () => exportSessionPreset());
+document.getElementById("importPresetBtn").addEventListener("click", () => {
+  document.getElementById("importPresetFile").click();
+});
+document.getElementById("importPresetFile").addEventListener("change", (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) importSessionPreset(f);
+  e.target.value = "";
+});
+document.getElementById("resetButton").addEventListener("click", () => {
+  if (confirm("Reset all saved settings for this browser?")) {
+    localStorage.removeItem(storageKey);
+    location.reload();
+  }
+});
+document.getElementById("profileSelect").addEventListener("change", (e) => {
+  state.profile = e.target.value;
+  save();
+  syncStatus();
+  renderPanels();
+});
+["serviceName", "notes"].forEach(id => {
+  document.getElementById(id).addEventListener("input", () => {
+    state.serviceName = document.getElementById("serviceName").value;
+    state.notes = document.getElementById("notes").value;
+    save();
+  });
+});
+
+load();
+renderTabs();
+renderPanels();
+syncStatus();
+initLocalCameraUI();
+</script>
 </body>
 </html>
